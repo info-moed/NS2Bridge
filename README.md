@@ -31,6 +31,7 @@ latency test. Native Swift app, no drivers to install, **no Apple Developer acco
 | **Rumble in games** (helper: SDL2 and SDL3) | ✅ Wave Race 64 Recomp, BattleShip | ✅ BattleShip | ✅ Wave Race 64 Recomp, BattleShip |
 | Full stick range in games (NS2 Bridge's calibration applied) | 🧪 | ✅ (was ~60%) | ✅ (SDL's own driver) |
 | Bluetooth | ✅ input and gyro, **133 reports/s** (7.5 ms) | ✅ (7.5 ms setting 🧪) | 🧪 (pair in macOS settings) |
+| **Games over Bluetooth** (helper's virtual gamepad, like Steam Input) | ✅ BattleShip (with gyro), Wave Race 64 Recomp | 🧪 | — (macOS shows it to games itself) |
 | Turn off to save battery (wireless) | 🧪 | ✅ | 🧪 |
 | Gyro / accelerometer (+ live 3D view) | ✅ USB and Bluetooth | — (none) | — (none) |
 | DSU (CemuHook) server for emulators | ✅ incl. gyro | ✅ buttons, sticks, triggers | ✅ buttons, stick |
@@ -57,7 +58,7 @@ And for every controller:
 
 ## Install
 
-**Short version:** download `NS2Bridge-1.0.0-macOS.zip` from [Releases](https://github.com/info-moed/NS2Bridge/releases), drag **NS2 Bridge.app** to
+**Short version:** download `NS2Bridge-1.0.1-macOS.zip` from [Releases](https://github.com/info-moed/NS2Bridge/releases), drag **NS2 Bridge.app** to
 Applications, and allow it once in **System Settings → Privacy & Security → Open Anyway**. Plug in a
 controller with a USB-C **data** cable.
 
@@ -140,8 +141,9 @@ SDL directly can't see it. The Motion tab shows a live 3D model of the controlle
   macOS on its own would use 30 ms, because the controller never asks for faster; NS2 Bridge asks macOS for
   a shorter interval (a private macOS call, so a future macOS may ignore it; it then runs at 30 ms). Fast
   (15 ms) and Standard (30 ms) use less of the controller's battery. The Latency Test tab shows what you get.
-- Over Bluetooth, the Switch 2 Pro and GameCube are available to NS2 Bridge and DSU clients; games
-  reading SDL directly don't see them.
+- **Games over Bluetooth** work like Steam Input: in games launched from the Games tab or with the helper
+  installed, NS2 Bridge's helper presents the Bluetooth controller as a normal SDL gamepad, with rumble, and
+  gyro in SDL3 games (SDL 2.24 or later needed). Games started any other way don't see Bluetooth controllers.
 
 ## Troubleshooting
 
@@ -167,9 +169,9 @@ game, and reports whether Nintendo controllers get SDL's own drivers with no pha
 
 ## Roadmap
 
-1. Hardware confirmation of the 🧪 items above (the Switch 2 Pro over Bluetooth, N64 over Bluetooth).
-2. Controllers visible to games over Bluetooth (a virtual SDL controller inside launched games).
-3. Gyro-to-mouse; decoding the motion data packed inside the Pro's normal report.
+1. Hardware confirmation of the remaining 🧪 items above (N64 over Bluetooth, the GameCube at 7.5 ms).
+2. Gyro-to-mouse; decoding the motion data packed inside the Pro's normal report.
+3. Bluetooth controllers in games that don't use SDL (a HID-level layer, like Steam Input's).
 4. Joy-Con 2.
 
 ## Credits

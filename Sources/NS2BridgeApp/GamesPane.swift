@@ -69,7 +69,7 @@ struct GameRow: View {
                     ForEach(model.driverReports[url.path] ?? [], id: \.productID) { r in
                         Label(r.isProblem
                               ? "Last run: N64 read without SDL's N64 driver, so input was wrong. Launch from here or install the helper."
-                              : "Last run: \(ControllerKind(productID: r.productID)?.shortName ?? "controller") on \(r.usesSDLDriver ? "SDL's own driver" : "SDL's generic driver") ✓",
+                              : "Last run: \(ControllerKind(productID: r.productID)?.shortName ?? "controller") on \(r.isVirtual ? "Bluetooth (NS2 Bridge's virtual gamepad)" : r.usesSDLDriver ? "SDL's own driver" : "SDL's generic driver") ✓",
                               systemImage: r.isProblem ? "exclamationmark.triangle.fill" : "checkmark.circle")
                             .font(.caption).foregroundStyle(r.isProblem ? .red : .secondary)
                     }

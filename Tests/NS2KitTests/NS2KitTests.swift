@@ -295,4 +295,34 @@ final class NS2KitTests: XCTestCase {
         XCTAssertFalse(BLELink.debugAllowed([0x15, 0x91, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00]))               // pairing
         XCTAssertFalse(BLELink.debugAllowed([0x03, 0x91, 0x01, 0x0D, 0x00, 0x08, 0x00, 0x00]))               // USB init + address
     }
+
+    func testVirtualGamepadPacketMatchesHelperLayout() {
+        var pad = DSUServer.Pad()
+        pad.south = true; pad.home = true; pad.dpadLeft = true
+        pad.leftStick = SIMD2(1, 1)                                        // right and up
+        pad.r2 = true
+        pad.motion = MotionSample(timestampMicros: 1_000_000, accel: SIMD3(0, 1, 0), gyro: SIMD3(0, 0, 90), temperatureC: 25)
+        let g = VirtualGamepad(slot: 1, kind: .switch2Pro, pad: pad, layout: .positions)
+        XCTAssertEqual(g.buttons, 1 << 0 | 1 << 5 | 1 << 13)              // south, guide, dpad left
+        XCTAssertEqual(g.axes, [32767, -32767, 0, 0, -32768, 32767])        // SDL: up is negative; triggers rest at min
+        let p = VirtualGamepad.packet([g])
+        XCTAssertEqual(p.count, 6 + 52)                                     // ns2rumble.c parses 52-byte entries
+        XCTAssertEqual(Array(p[0..<6]), Array("NS2V".utf8) + [1, 1])
+        XCTAssertEqual(p[6], 1); XCTAssertEqual(p[7], 1)                    // slot, motion flag
+        XCTAssertEqual(UInt16(p[8]) | UInt16(p[9]) << 8, 0x2069)
+        let accelY = Float(bitPattern: UInt32(p[30]) | UInt32(p[31]) << 8 | UInt32(p[32]) << 16 | UInt32(p[33]) << 24)
+        XCTAssertEqual(accelY, 9.80665, accuracy: 0.001)                    // m/s²
+        let gyroZ = Float(bitPattern: UInt32(p[46]) | UInt32(p[47]) << 8 | UInt32(p[48]) << 16 | UInt32(p[49]) << 24)
+        XCTAssertEqual(gyroZ, .pi / 2, accuracy: 0.0001)                    // rad/s
+        // Label layout: the button printed "A" (east on the Pro) becomes SDL's A.
+        var a = DSUServer.Pad(); a.east = true
+        XCTAssertEqual(VirtualGamepad(slot: 1, kind: .switch2Pro, pad: a, layout: .labels).buttons, 1 << 0)
+    }
+
+    func testRumbleRouteToBluetoothController() {
+        let routes = [RumbleRoute(productID: 0x2069, player: 1, deviceID: 42, item: "usb"),
+                      RumbleRoute(productID: 0x2069, player: 2, deviceID: nil, item: "ble")]
+        XCTAssertEqual(RumbleRoute.choose(routes, productID: 0x2069, deviceID: RumbleRoute<String>.bluetoothDevice, rank: -1), "ble")
+        XCTAssertEqual(RumbleRoute.choose(routes, productID: 0x2069, deviceID: 42, rank: -1), "usb")
+    }
 }

@@ -10,10 +10,10 @@
 
 ## Option A: install the release zip
 
-1. Download `NS2Bridge-1.0.0-macOS.zip` from the [GitHub Releases page](https://github.com/info-moed/NS2Bridge/releases). Optionally, check it against the
+1. Download `NS2Bridge-1.0.1-macOS.zip` from the [GitHub Releases page](https://github.com/info-moed/NS2Bridge/releases). Optionally, check it against the
    published SHA-256:
    ```bash
-   shasum -a 256 NS2Bridge-1.0.0-macOS.zip
+   shasum -a 256 NS2Bridge-1.0.1-macOS.zip
    ```
 2. Double-click the zip, then drag **NS2 Bridge.app** into **Applications**.
 3. **First launch (one time only).** NS2 Bridge isn't signed with a paid Apple Developer ID, so macOS
@@ -63,11 +63,17 @@ No Apple Developer account is needed at any step.
 
 ## Uninstalling
 
+**Easiest:** in NS2 Bridge, **Setup → Reset NS2 Bridge…** removes the helper from every game (restoring the
+original files), the game settings, the login items, and all settings and data. Then quit NS2 Bridge and
+delete **NS2 Bridge.app**. A later install starts fresh, with the welcome guide.
+
+By hand:
+
 1. In NS2 Bridge, **Games**: for every game with the helper installed, click **Remove helper from game**.
    This restores the game's original files from the backup.
 2. Quit NS2 Bridge (menu bar → Quit). Its force-feedback plug-in is detached from the controllers.
 3. Delete **NS2 Bridge.app** from Applications.
-4. Optional clean-up:
+4. Optional clean-up (macOS keeps an app's settings after it's deleted):
    ```bash
    defaults delete local.ns2bridge                                  # settings, profiles, calibration
    rm -rf ~/Library/Application\ Support/NS2Bridge                   # battery history, game settings, backups

@@ -157,6 +157,7 @@ struct Stat: View {
 
 struct SetupPane: View {
     @Environment(BridgeModel.self) private var model
+    @State private var confirmReset = false
 
     var body: some View {
         @Bindable var model = model
@@ -233,11 +234,28 @@ struct SetupPane: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Coming later").font(.headline)
-                    Text("Gyro / motion (for emulators via DSU, and gyro-as-mouse) · Rumble · NSO GameCube and N64 controllers.")
+                    Text("Gyro as mouse · Joy-Con 2 · Bluetooth controllers in games that don't use SDL.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Start over").font(.headline)
+                    Text("macOS keeps an app's settings when you delete it. Reset removes everything NS2 Bridge set up, as if it had never been installed, then opens the welcome guide.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Reset NS2 Bridge…", role: .destructive) { confirmReset = true }
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .confirmationDialog("Reset NS2 Bridge?", isPresented: $confirmReset) {
+                Button("Reset and Relaunch", role: .destructive) { model.resetEverything() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The helper is removed from every game it was installed into (their original files are restored), the game settings and login items are removed, and all settings, calibrations, controller profiles and battery history are deleted. Your games themselves stay where they are.")
             }
         }
     }

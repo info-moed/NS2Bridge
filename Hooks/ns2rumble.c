@@ -18,6 +18,10 @@
 //   5. reports which SDL driver each Nintendo controller got, so NS2 Bridge can warn if it's the wrong one
 //      (checked from the game's own SDL_PollEvent / SDL_PeepEvents calls: 2 s after start, then every 5 s;
 //      sent on change);
+//   7. presents Bluetooth controllers to the game: games can't see Switch 2 controllers over Bluetooth (NS2
+//      Bridge holds the connection), so NS2 Bridge streams them here and the helper attaches an SDL virtual
+//      gamepad per controller (SDL 2.24+ or SDL3; gyro and accelerometer with SDL3, which has virtual sensors).
+//      Attached and detached from the game's own event calls; rumble goes back to that Bluetooth controller.
 //   6. rescales stick axes for Nintendo controllers SDL reads through its generic IOKit backend: SDL maps
 //      the raw 0–4095 range, but a GameCube stick only uses ~60% of it (Pro ~80%), so full tilt reached
 //      only ~60% in games. NS2 Bridge passes each controller's calibration as
@@ -30,7 +34,10 @@
 //                                  this kind in connection order (0xFF unknown), so NS2 Bridge can tell
 //                                  two identical controllers apart
 //                           "NS2B" u32 pid u16 product u8 driver u8 sdlMajor — controller opened;
-//                                  driver = SDL GUID byte 14 ('h' HIDAPI, 0 IOKit/other)
+//                                  driver = SDL GUID byte 14 ('h' HIDAPI, 'v' virtual, 0 IOKit/other)
+//                           "NS2K" u32 pid — keep-alive, every second: NS2 Bridge then streams
+//                                  "NS2V" packets (Bluetooth controllers, see VirtualGamepad.swift) back
+//                           device UINT64_MAX in "NS2R" = the Bluetooth controller behind a virtual gamepad
 // Everything else passes straight through to SDL.
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -41,6 +48,7 @@
 #include <mach-o/nlist.h>
 #include <mach/mach.h>
 #include <mach/mach_time.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -51,7 +59,7 @@
 #include <unistd.h>
 
 // Bumped whenever the helper changes, so NS2 Bridge can tell an installed copy is outdated.
-__attribute__((used)) static const char ns2_version[] = "NS2RUMBLE_VERSION=7";
+__attribute__((used)) static const char ns2_version[] = "NS2RUMBLE_VERSION=8";
 
 // ---------------------------------------------------------------- transport
 
@@ -97,6 +105,8 @@ static int is_ns2(uint16_t v, uint16_t p) {
 }
 // Everything NS2 Bridge drives rumble for: Switch 2 family + NSO N64.
 static int is_supported(uint16_t v, uint16_t p) { return is_ns2(v, p) || (v == 0x057E && p == 0x2019); }
+
+typedef struct { uint8_t data[16]; } ns2_guid;
 
 // ---------------------------------------------------------------- SDL functions (resolved at run time)
 // No SDL symbols are linked: the helper works with SDL2, SDL3, or SDL loaded later.
@@ -162,13 +172,20 @@ static uint8_t rank3(uint32_t me, uint16_t product) {
 
 static const char *XBOX_NAME = "Xbox Wireless Controller";
 
+// Virtual gamepads (Bluetooth controllers), defined below.
+#define BLUETOOTH_DEVICE UINT64_MAX
+typedef ns2_guid (*guid_ptr_fn)(void *);
+static int is_virtual_guid(ns2_guid g);
+static void vpad_service(void);
+static void *c_SDL_JoystickGetGUIDv, *c_SDL_GetGamepadJoystickv, *c_SDL_GetJoystickGUIDv;
+
 // Originals, captured when the game's pointers are rewritten (fallback: dlsym).
 static void *o_SDL_GameControllerRumble, *o_SDL_JoystickRumble, *o_SDL_GameControllerHasRumble,
     *o_SDL_GameControllerGetType, *o_SDL_GameControllerTypeForIndex, *o_SDL_GameControllerName,
     *o_SDL_GameControllerNameForIndex, *o_SDL_RumbleGamepad, *o_SDL_RumbleJoystick, *o_SDL_GetGamepadType,
     *o_SDL_GetGamepadTypeForID, *o_SDL_GetGamepadName, *o_SDL_GetGamepadNameForID,
     *o_SDL_SetHint, *o_SDL_SetHintWithPriority, *o_SDL_GameControllerOpen, *o_SDL_OpenGamepad, *o_SDL_PollEvent,
-    *o_SDL_PeepEvents, *o_SDL_GameControllerGetAxis, *o_SDL_GetGamepadAxis;
+    *o_SDL_PeepEvents, *o_SDL_GameControllerGetAxis, *o_SDL_GetGamepadAxis, *o_SDL_PumpEvents;
 #define ORIG(type, name) ((type)sym(&o_##name, #name))
 
 // ---------------------------------------------------------------- SDL2 wrappers
@@ -186,7 +203,9 @@ static int w_SDL_GameControllerRumble(void *gc, uint16_t lo, uint16_t hi, uint32
         path_ptr_fn path = (path_ptr_fn)sym(&c_SDL_GameControllerPath, "SDL_GameControllerPath");
         ptr_ptr_fn2 joy = (ptr_ptr_fn2)sym(&c_SDL_GameControllerGetJoystick2, "SDL_GameControllerGetJoystick");
         i32_ptr_fn iid = (i32_ptr_fn)sym(&c_SDL_JoystickInstanceID, "SDL_JoystickInstanceID");
-        forward(lo, hi, ms, p, device_from_path(path ? path(gc) : NULL), joy && iid ? rank2(iid(joy(gc)), p) : 0xFF);
+        guid_ptr_fn guid = (guid_ptr_fn)sym(&c_SDL_JoystickGetGUIDv, "SDL_JoystickGetGUID");
+        if (joy && guid && is_virtual_guid(guid(joy(gc)))) forward(lo, hi, ms, p, BLUETOOTH_DEVICE, 0xFF);
+        else forward(lo, hi, ms, p, device_from_path(path ? path(gc) : NULL), joy && iid ? rank2(iid(joy(gc)), p) : 0xFF);
         return 0;
     }
     rumble2_fn f = ORIG(rumble2_fn, SDL_GameControllerRumble);
@@ -199,7 +218,9 @@ static int w_SDL_JoystickRumble(void *j, uint16_t lo, uint16_t hi, uint32_t ms) 
     if (p) {
         path_ptr_fn path = (path_ptr_fn)sym(&c_SDL_JoystickPath, "SDL_JoystickPath");
         i32_ptr_fn iid = (i32_ptr_fn)sym(&c_SDL_JoystickInstanceID, "SDL_JoystickInstanceID");
-        forward(lo, hi, ms, p, device_from_path(path ? path(j) : NULL), iid ? rank2(iid(j), p) : 0xFF);
+        guid_ptr_fn guid = (guid_ptr_fn)sym(&c_SDL_JoystickGetGUIDv, "SDL_JoystickGetGUID");
+        if (guid && is_virtual_guid(guid(j))) forward(lo, hi, ms, p, BLUETOOTH_DEVICE, 0xFF);
+        else forward(lo, hi, ms, p, device_from_path(path ? path(j) : NULL), iid ? rank2(iid(j), p) : 0xFF);
         return 0;
     }
     rumble2_fn f = ORIG(rumble2_fn, SDL_JoystickRumble);
@@ -254,7 +275,10 @@ static bool w_SDL_RumbleGamepad(void *g, uint16_t lo, uint16_t hi, uint32_t ms) 
     if (p) {
         path_ptr_fn path = (path_ptr_fn)sym(&c_SDL_GetGamepadPath, "SDL_GetGamepadPath");
         u32_ptr_fn gid = (u32_ptr_fn)sym(&c_SDL_GetGamepadID, "SDL_GetGamepadID");
-        forward(lo, hi, ms, p, device_from_path(path ? path(g) : NULL), gid ? rank3(gid(g), p) : 0xFF);
+        ptr_ptr_fn2 joy = (ptr_ptr_fn2)sym(&c_SDL_GetGamepadJoystickv, "SDL_GetGamepadJoystick");
+        guid_ptr_fn guid = (guid_ptr_fn)sym(&c_SDL_GetJoystickGUIDv, "SDL_GetJoystickGUID");
+        if (joy && guid && is_virtual_guid(guid(joy(g)))) forward(lo, hi, ms, p, BLUETOOTH_DEVICE, 0xFF);
+        else forward(lo, hi, ms, p, device_from_path(path ? path(g) : NULL), gid ? rank3(gid(g), p) : 0xFF);
         return true;
     }
     rumble3_fn f = ORIG(rumble3_fn, SDL_RumbleGamepad);
@@ -267,7 +291,9 @@ static bool w_SDL_RumbleJoystick(void *j, uint16_t lo, uint16_t hi, uint32_t ms)
     if (p) {
         path_ptr_fn path = (path_ptr_fn)sym(&c_SDL_GetJoystickPath, "SDL_GetJoystickPath");
         u32_ptr_fn jid = (u32_ptr_fn)sym(&c_SDL_GetJoystickID, "SDL_GetJoystickID");
-        forward(lo, hi, ms, p, device_from_path(path ? path(j) : NULL), jid ? rank3(jid(j), p) : 0xFF);
+        guid_ptr_fn guid = (guid_ptr_fn)sym(&c_SDL_GetJoystickGUIDv, "SDL_GetJoystickGUID");
+        if (guid && is_virtual_guid(guid(j))) forward(lo, hi, ms, p, BLUETOOTH_DEVICE, 0xFF);
+        else forward(lo, hi, ms, p, device_from_path(path ? path(j) : NULL), jid ? rank3(jid(j), p) : 0xFF);
         return true;
     }
     rumble3_fn f = ORIG(rumble3_fn, SDL_RumbleJoystick);
@@ -304,6 +330,277 @@ static const char *w_SDL_GetGamepadNameForID(uint32_t id) {
     return f ? f(id) : NULL;
 }
 
+// ---------------------------------------------------------------- Bluetooth controllers as virtual gamepads
+
+#define VPADS 8
+struct vpad_state {
+    uint8_t slot, flags;                  // flags bit 0: motion valid
+    uint16_t product;
+    uint32_t buttons;                     // bit n = SDL gamepad button n
+    int16_t axes[6];                      // SDL gamepad axes; triggers -32768 at rest
+    float accel[3], gyro[3];              // m/s², rad/s, SDL frame
+    uint64_t sensor_us;
+};
+static struct vpad {
+    int used;                             // has state (guarded by vlock)
+    struct vpad_state s;
+    uint64_t seen;                        // mach time of the last update
+    // Game thread only:
+    int attached;
+    uint32_t id;                          // SDL3 joystick ID / SDL2 instance ID
+    void *joy;                            // our own open handle (for the virtual setters)
+    uint64_t sent_sensor_us;
+} vpads[VPADS];
+static pthread_mutex_t vlock = PTHREAD_MUTEX_INITIALIZER;
+static mach_timebase_info_data_t vtb;
+
+static uint64_t ticks_per_second(void) {
+    if (!vtb.denom) mach_timebase_info(&vtb);
+    return (uint64_t)1000000000 * vtb.denom / vtb.numer;
+}
+
+static float f32_at(const uint8_t *p) { float f; memcpy(&f, p, 4); return f; }
+
+/// NS2 Bridge's "NS2V" stream (VirtualGamepad.swift): latest state per slot.
+static void *vpad_receive(void *arg) {
+    (void)arg;
+    uint8_t buf[6 + VPADS * 52];
+    for (;;) {
+        ssize_t n = recv(sock, buf, sizeof buf, 0);
+        if (n < 6 || memcmp(buf, "NS2V", 4) != 0 || buf[4] != 1) continue;
+        int count = buf[5];
+        if (count > VPADS || 6 + count * 52 > n) continue;
+        uint64_t now = mach_absolute_time();
+        pthread_mutex_lock(&vlock);
+        for (int e = 0; e < count; e++) {
+            const uint8_t *p = buf + 6 + e * 52;
+            struct vpad_state st = {.slot = p[0], .flags = p[1]};
+            memcpy(&st.product, p + 2, 2);
+            memcpy(&st.buttons, p + 4, 4);
+            memcpy(st.axes, p + 8, 12);
+            for (int i = 0; i < 3; i++) { st.accel[i] = f32_at(p + 20 + 4 * i); st.gyro[i] = f32_at(p + 32 + 4 * i); }
+            memcpy(&st.sensor_us, p + 44, 8);
+            int k = -1;
+            for (int i = 0; i < VPADS; i++) if (vpads[i].used && vpads[i].s.slot == st.slot) { k = i; break; }
+            for (int i = 0; k < 0 && i < VPADS; i++) if (!vpads[i].used && !vpads[i].attached) k = i;
+            if (k < 0) continue;
+            vpads[k].used = 1;
+            vpads[k].s = st;
+            vpads[k].seen = now;
+        }
+        pthread_mutex_unlock(&vlock);
+    }
+    return NULL;
+}
+
+/// Tells NS2 Bridge this game wants Bluetooth controllers (it streams while keep-alives arrive).
+static void *vpad_keepalive(void *arg) {
+    (void)arg;
+    uint8_t p[8] = {'N', 'S', '2', 'K'};
+    uint32_t pid = (uint32_t)getpid();
+    memcpy(p + 4, &pid, 4);
+    for (;;) { ns2_send(p, sizeof p); sleep(1); }
+    return NULL;
+}
+
+// SDL3 (also under sdl2-compat, which runs SDL3): SDL_VirtualJoystickDesc as of SDL 3.2.
+typedef struct { int32_t type; float rate; } v3_sensor;
+typedef struct {
+    uint32_t version;
+    uint16_t type, padding, vendor_id, product_id, naxes, nbuttons, nballs, nhats, ntouchpads, nsensors, padding2[2];
+    uint32_t button_mask, axis_mask;
+    const char *name;
+    const void *touchpads;
+    const v3_sensor *sensors;
+    void *userdata;
+    void (*Update)(void *);
+    void (*SetPlayerIndex)(void *, int);
+    bool (*Rumble)(void *, uint16_t, uint16_t);
+    bool (*RumbleTriggers)(void *, uint16_t, uint16_t);
+    bool (*SetLED)(void *, uint8_t, uint8_t, uint8_t);
+    bool (*SendEffect)(void *, const void *, int);
+    bool (*SetSensorsEnabled)(void *, bool);
+    void (*Cleanup)(void *);
+} v3_desc;
+// SDL2 (2.24+): SDL_VirtualJoystickDesc, version 1.
+typedef struct {
+    uint16_t version, type, naxes, nbuttons, nhats, vendor_id, product_id, padding;
+    uint32_t button_mask, axis_mask;
+    const char *name;
+    void *userdata;
+    void (*Update)(void *);
+    void (*SetPlayerIndex)(void *, int);
+    int (*Rumble)(void *, uint16_t, uint16_t);
+    int (*RumbleTriggers)(void *, uint16_t, uint16_t);
+    int (*SetLED)(void *, uint8_t, uint8_t, uint8_t);
+    int (*SendEffect)(void *, const void *, int);
+} v2_desc;
+
+static void *c_SDL_WasInit, *c_SDL_AttachVirtualJoystick, *c_SDL_DetachVirtualJoystick, *c_SDL_OpenJoystick,
+    *c_SDL_CloseJoystick, *c_SDL_SetJoystickVirtualAxis, *c_SDL_SetJoystickVirtualButton,
+    *c_SDL_SendJoystickVirtualSensorData, *c_SDL_JoystickAttachVirtualEx, *c_SDL_JoystickDetachVirtual,
+    *c_SDL_JoystickOpen, *c_SDL_JoystickClose, *c_SDL_JoystickSetVirtualAxis, *c_SDL_JoystickSetVirtualButton,
+    *c_SDL_JoystickInstanceID2, *c_SDL_NumJoysticks3, *c_SDL_JoystickGetDeviceInstanceID2;
+
+/// SDL3, also when sdl2-compat loaded it privately (RTLD_LOCAL: not visible to a global dlsym), so games
+/// built on sdl2-compat still get SDL3's virtual sensors. Looked up among the loaded images until found.
+static void *sdl3_lib(void) {
+    static void *handle;
+    if (handle) return handle;
+    for (uint32_t i = 0; i < _dyld_image_count() && !handle; i++) {
+        const char *n = _dyld_get_image_name(i);
+        if (n && (strstr(n, "/libSDL3") || strstr(n, "/SDL3.framework/"))) handle = dlopen(n, RTLD_LAZY | RTLD_NOLOAD);
+    }
+    return handle;
+}
+static void *sym3(void **cache, const char *name) {
+    if (!*cache) { void *h = sdl3_lib(); *cache = h ? dlsym(h, name) : NULL; }
+    return *cache;
+}
+#define S3(type, name) ((type)sym3(&c_##name, #name))
+
+/// 3 = SDL3 virtual joysticks (with sensors), 2 = SDL2's (2.24+), 0 = none (yet): decided once SDL is up.
+static int vpad_flavor;
+static int vpad_sdl3(void) { return vpad_flavor == 3; }
+
+static void vpad_update(void *userdata) {
+    struct vpad *v = &vpads[(intptr_t)userdata];
+    if (!v->joy) return;
+    pthread_mutex_lock(&vlock);
+    struct vpad_state st = v->s;
+    pthread_mutex_unlock(&vlock);
+    if (vpad_sdl3()) {
+        bool (*axis)(void *, int, int16_t) = (bool (*)(void *, int, int16_t))S3(void *, SDL_SetJoystickVirtualAxis);
+        bool (*button)(void *, int, bool) = (bool (*)(void *, int, bool))S3(void *, SDL_SetJoystickVirtualButton);
+        bool (*sensor)(void *, int32_t, uint64_t, const float *, int) =
+            (bool (*)(void *, int32_t, uint64_t, const float *, int))S3(void *, SDL_SendJoystickVirtualSensorData);
+        if (!axis || !button) return;
+        for (int i = 0; i < 6; i++) axis(v->joy, i, st.axes[i]);
+        for (int i = 0; i < 16; i++) button(v->joy, i, (st.buttons >> i) & 1);
+        if (sensor && (st.flags & 1) && st.sensor_us != v->sent_sensor_us) {
+            v->sent_sensor_us = st.sensor_us;
+            sensor(v->joy, 1, st.sensor_us * 1000, st.accel, 3);          // SDL_SENSOR_ACCEL
+            sensor(v->joy, 2, st.sensor_us * 1000, st.gyro, 3);           // SDL_SENSOR_GYRO
+        }
+    } else {
+        int (*axis)(void *, int, int16_t) = (int (*)(void *, int, int16_t))SYM(void *, SDL_JoystickSetVirtualAxis);
+        int (*button)(void *, int, uint8_t) = (int (*)(void *, int, uint8_t))SYM(void *, SDL_JoystickSetVirtualButton);
+        if (!axis || !button) return;
+        for (int i = 0; i < 6; i++) axis(v->joy, i, st.axes[i]);
+        for (int i = 0; i < 16; i++) button(v->joy, i, (st.buttons >> i) & 1);
+    }
+}
+
+static void vpad_rumble(void *userdata, uint16_t lo, uint16_t hi) {
+    struct vpad *v = &vpads[(intptr_t)userdata];
+    forward(lo, hi, 0, v->s.product, BLUETOOTH_DEVICE, 0xFF);    // 0 ms: until the next request (SDL stops it)
+}
+static bool vpad_rumble3(void *u, uint16_t lo, uint16_t hi) { vpad_rumble(u, lo, hi); return true; }
+static int vpad_rumble2(void *u, uint16_t lo, uint16_t hi) { vpad_rumble(u, lo, hi); return 0; }
+static bool vpad_sensors3(void *u, bool on) { (void)u; (void)on; return true; }
+
+static const char *vpad_name(uint16_t product) {
+    return product == 0x2073 ? "Nintendo GameCube Controller" : "Nintendo Switch 2 Pro Controller";
+}
+
+static void vpad_attach(int k) {
+    struct vpad *v = &vpads[k];
+    uint16_t product = v->s.product;
+    if (vpad_sdl3()) {
+        static const v3_sensor sensors[2] = {{1, 0}, {2, 0}};          // accelerometer, gyro
+        v3_desc d = {0};
+        d.version = sizeof d;
+        d.type = 1;                                                   // SDL_JOYSTICK_TYPE_GAMEPAD
+        d.vendor_id = 0x057E; d.product_id = product;
+        d.naxes = 6; d.nbuttons = 16;
+        d.nsensors = product == 0x2069 ? 2 : 0;                       // the Pro has an IMU
+        d.sensors = d.nsensors ? sensors : NULL;
+        d.button_mask = 0xFFFF; d.axis_mask = 0x3F;
+        d.name = vpad_name(product);
+        d.userdata = (void *)(intptr_t)k;
+        d.Update = vpad_update; d.Rumble = vpad_rumble3; d.SetSensorsEnabled = vpad_sensors3;
+        uint32_t (*attach)(const v3_desc *) = (uint32_t (*)(const v3_desc *))S3(void *, SDL_AttachVirtualJoystick);
+        void *(*open)(uint32_t) = (void *(*)(uint32_t))S3(void *, SDL_OpenJoystick);
+        uint32_t id = attach(&d);
+        if (!id) return;
+        v->id = id;
+        v->joy = open(id);
+    } else {
+        int (*attach)(const v2_desc *) = (int (*)(const v2_desc *))SYM(void *, SDL_JoystickAttachVirtualEx);
+        void *(*open)(int) = (void *(*)(int))SYM(void *, SDL_JoystickOpen);
+        int32_t (*iid)(void *) = (int32_t (*)(void *))sym(&c_SDL_JoystickInstanceID2, "SDL_JoystickInstanceID");
+        if (!attach || !open || !iid) return;
+        v2_desc d = {0};
+        d.version = 1;
+        d.type = 1;                                                   // SDL_JOYSTICK_TYPE_GAMECONTROLLER
+        d.naxes = 6; d.nbuttons = 16;
+        d.vendor_id = 0x057E; d.product_id = product;
+        d.button_mask = 0xFFFF; d.axis_mask = 0x3F;
+        d.name = vpad_name(product);
+        d.userdata = (void *)(intptr_t)k;
+        d.Update = vpad_update; d.Rumble = vpad_rumble2;
+        int index = attach(&d);
+        if (index < 0) return;
+        v->joy = open(index);
+        if (!v->joy) return;
+        v->id = (uint32_t)iid(v->joy);
+    }
+    v->attached = 1;
+    v->sent_sensor_us = 0;
+}
+
+static void vpad_detach(int k) {
+    struct vpad *v = &vpads[k];
+    if (vpad_sdl3()) {
+        void (*close)(void *) = (void (*)(void *))S3(void *, SDL_CloseJoystick);
+        bool (*detach)(uint32_t) = (bool (*)(uint32_t))S3(void *, SDL_DetachVirtualJoystick);
+        if (v->joy && close) close(v->joy);
+        if (detach) detach(v->id);
+    } else {
+        void (*close)(void *) = (void (*)(void *))SYM(void *, SDL_JoystickClose);
+        int (*detach)(int) = (int (*)(int))SYM(void *, SDL_JoystickDetachVirtual);
+        int (*count)(void) = (int (*)(void))sym(&c_SDL_NumJoysticks3, "SDL_NumJoysticks");
+        int32_t (*iid)(int) = (int32_t (*)(int))sym(&c_SDL_JoystickGetDeviceInstanceID2, "SDL_JoystickGetDeviceInstanceID");
+        if (v->joy && close) close(v->joy);
+        if (detach && count && iid) {                                 // device indices shift: find ours
+            int n = count();
+            for (int i = 0; i < n; i++) if ((uint32_t)iid(i) == v->id) { detach(i); break; }
+        }
+    }
+    v->attached = 0;
+    v->joy = NULL;
+}
+
+/// From the game's own event calls: attach a gamepad for each streaming Bluetooth controller, detach those
+/// that stopped (no update for 1 s: turned off, out of range, or NS2 Bridge quit).
+static void *c_SDL_WasInit3;
+static void vpad_service(void) {
+    if (!vpad_flavor) {
+        if (S3(void *, SDL_AttachVirtualJoystick) && S3(void *, SDL_OpenJoystick)) vpad_flavor = 3;
+        else if (SYM(void *, SDL_JoystickAttachVirtualEx)) vpad_flavor = 2;
+        else return;                                                  // no SDL (yet), or one too old
+    }
+    uint32_t (*was_init)(uint32_t) = vpad_flavor == 3 ? (uint32_t (*)(uint32_t))sym3(&c_SDL_WasInit3, "SDL_WasInit")
+                                                      : (uint32_t (*)(uint32_t))SYM(void *, SDL_WasInit);
+    if (!was_init) return;
+    if (!(was_init(0x200) & 0x200)) {                                 // SDL_INIT_JOYSTICK not (or no longer) up
+        for (int k = 0; k < VPADS; k++) { vpads[k].attached = 0; vpads[k].joy = NULL; }
+        return;
+    }
+    uint64_t now = mach_absolute_time(), stale = ticks_per_second();
+    for (int k = 0; k < VPADS; k++) {
+        pthread_mutex_lock(&vlock);
+        int fresh = vpads[k].used && now - vpads[k].seen < stale;
+        if (vpads[k].used && !fresh) vpads[k].used = 0;
+        pthread_mutex_unlock(&vlock);
+        if (fresh && !vpads[k].attached) vpad_attach(k);
+        else if (!fresh && vpads[k].attached) vpad_detach(k);
+    }
+}
+
+/// Is this SDL joystick one of our virtual gamepads? (SDL GUID byte 14 is 'v' for virtual joysticks.)
+static int is_virtual_guid(ns2_guid g) { return g.data[14] == 'v'; }
+
 // ---------------------------------------------------------------- driver guard + report
 
 /// Hints that would switch off SDL's N64 driver. (The master SDL_JOYSTICK_HIDAPI hint is left to the game:
@@ -329,7 +626,6 @@ static int w_SDL_SetHintWithPriority(const char *name, const char *value, int pr
     return f ? (f(name, value, priority) & 0xFF) != 0 : 0;
 }
 
-typedef struct { uint8_t data[16]; } ns2_guid;
 typedef ns2_guid (*guid_int_fn)(int);
 typedef ns2_guid (*guid_u32_fn)(uint32_t);
 static void *c_SDL_JoystickGetDeviceGUID, *c_SDL_GetJoystickGUIDForID;
@@ -380,7 +676,6 @@ static int16_t rescale_axis(const struct axis_cal *a, int16_t v) {
 
 /// Calibration for this gamepad, if it's one SDL reads through IOKit (SDL's own drivers calibrate themselves).
 typedef void *(*ptr_ptr_fn)(void *);
-typedef ns2_guid (*guid_ptr_fn)(void *);
 static void *c_SDL_GameControllerGetJoystick, *c_SDL_JoystickGetGUID, *c_SDL_GetGamepadJoystick, *c_SDL_GetJoystickGUID;
 
 static const struct stick_cal *cal_for(void *pad, int sdl3) {
@@ -392,7 +687,8 @@ static const struct stick_cal *cal_for(void *pad, int sdl3) {
     u16_ptr_fn gp = sdl3 ? SYM(u16_ptr_fn, SDL_GetGamepadProduct) : SYM(u16_ptr_fn, SDL_GameControllerGetProduct);
     ptr_ptr_fn joy = sdl3 ? SYM(ptr_ptr_fn, SDL_GetGamepadJoystick) : SYM(ptr_ptr_fn, SDL_GameControllerGetJoystick);
     guid_ptr_fn guid = sdl3 ? SYM(guid_ptr_fn, SDL_GetJoystickGUID) : SYM(guid_ptr_fn, SDL_JoystickGetGUID);
-    if (gv && gp && joy && guid && gv(pad) == 0x057E && guid(joy(pad)).data[14] != 'h') {
+    ns2_guid g = gv && gp && joy && guid ? guid(joy(pad)) : (ns2_guid){{0}};
+    if (gv && gp && joy && guid && gv(pad) == 0x057E && g.data[14] != 'h' && !is_virtual_guid(g)) {
         uint16_t p = gp(pad);
         for (int i = 0; i < n_stick_cals; i++) if (stick_cals[i].product == p) found = &stick_cals[i];
     }
@@ -459,6 +755,7 @@ static void maybe_scan(void) {
 typedef int (*pollevent_fn)(void *);
 static int w_SDL_PollEvent(void *event) {
     maybe_scan();
+    vpad_service();
     pollevent_fn f = ORIG(pollevent_fn, SDL_PollEvent);
     return f ? f(event) : 0;
 }
@@ -467,8 +764,16 @@ static int w_SDL_PollEvent(void *event) {
 typedef int (*peepevents_fn)(void *, int, int, uint32_t, uint32_t);
 static int w_SDL_PeepEvents(void *events, int n, int action, uint32_t lo, uint32_t hi) {
     maybe_scan();
+    vpad_service();
     peepevents_fn f = ORIG(peepevents_fn, SDL_PeepEvents);
     return f ? f(events, n, action, lo, hi) : -1;
+}
+
+typedef void (*pump_fn)(void);
+static void w_SDL_PumpEvents(void) {
+    vpad_service();
+    pump_fn f = ORIG(pump_fn, SDL_PumpEvents);
+    if (f) f();
 }
 
 static void *w_SDL_GameControllerOpen(int i) {
@@ -500,7 +805,7 @@ static struct rebind rebinds[] = {
     RB(SDL_RumbleGamepad), RB(SDL_RumbleJoystick),
     RB(SDL_GetGamepadType), RB(SDL_GetGamepadTypeForID), RB(SDL_GetGamepadName), RB(SDL_GetGamepadNameForID),
     RB(SDL_SetHint), RB(SDL_SetHintWithPriority), RB(SDL_GameControllerOpen), RB(SDL_OpenGamepad), RB(SDL_PollEvent),
-    RB(SDL_PeepEvents), RB(SDL_GameControllerGetAxis), RB(SDL_GetGamepadAxis),
+    RB(SDL_PeepEvents), RB(SDL_GameControllerGetAxis), RB(SDL_GetGamepadAxis), RB(SDL_PumpEvents),
 };
 static const size_t n_rebinds = sizeof rebinds / sizeof rebinds[0];
 
@@ -617,6 +922,12 @@ __attribute__((constructor)) static void ns2_init(void) {
     dest.sin_family = AF_INET;
     dest.sin_port = htons(26761);
     dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    struct sockaddr_in local = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+    if (sock >= 0 && bind(sock, (const struct sockaddr *)&local, sizeof local) == 0) {   // port for NS2 Bridge's stream
+        pthread_t t;
+        if (pthread_create(&t, NULL, vpad_receive, NULL) == 0) pthread_detach(t);
+        if (pthread_create(&t, NULL, vpad_keepalive, NULL) == 0) pthread_detach(t);
+    }
 
     // Called for every image already loaded and every one loaded later (dlopen).
     _dyld_register_func_for_add_image(rebind_image);

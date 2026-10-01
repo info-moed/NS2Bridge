@@ -214,6 +214,9 @@ public struct RumbleRoute<Item>: @unchecked Sendable {
     public var deviceID: UInt64?          // IORegistry entry ID of the HID device (nil: Bluetooth LE)
     public var item: Item
 
+    /// Device ID the game helper sends for rumble on its virtual gamepad (a Bluetooth LE controller).
+    public static var bluetoothDevice: UInt64 { .max }
+
     public init(productID: Int, player: Int, deviceID: UInt64?, item: Item) {
         self.productID = productID; self.player = player; self.deviceID = deviceID; self.item = item
     }
@@ -222,8 +225,10 @@ public struct RumbleRoute<Item>: @unchecked Sendable {
     /// 2. `rank` (the controller's position among the game's controllers of this kind, in connection order)
     ///    → the same position among NS2 Bridge's, ordered by registry ID (which grows with connection time).
     /// 3. Otherwise the lowest-numbered player of that kind. `productID` 0 = any kind (old helpers).
+    /// `bluetoothDevice` as the device = the Bluetooth LE controller of that kind (the helper's virtual gamepad).
     public static func choose(_ routes: [RumbleRoute], productID: Int, deviceID: UInt64, rank: Int) -> Item? {
         let candidates = routes.filter { productID == 0 || $0.productID == productID }
+        if deviceID == bluetoothDevice { return candidates.first { $0.deviceID == nil }?.item }
         if deviceID != 0, let exact = candidates.first(where: { $0.deviceID == deviceID }) { return exact.item }
         if rank >= 0, candidates.count > 1 {
             let ordered = candidates.sorted { ($0.deviceID ?? .max) < ($1.deviceID ?? .max) }
@@ -280,9 +285,23 @@ public final class ControllerHub {
         }
     }
 
+    /// Motion for Bluetooth controllers regardless of `motionEnabled` (Motion not Off): over Bluetooth games
+    /// can't read the controller directly anyway (they get it through the helper's virtual gamepad), so 0x05
+    /// costs nothing there, and the virtual gamepad's gyro works without a DSU client.
+    public var bluetoothMotion = false {
+        didSet {
+            guard bluetoothMotion != oldValue else { return }
+            for c in controllers where c.kind.hasMotion && c.transport == .bluetooth {
+                c.motionDecoder.reset()
+                selectReportFormat(c)
+            }
+        }
+    }
+
     /// The input report format a controller should stream right now.
     public func reportFormat(for c: ConnectedController) -> UInt8 {
-        c.kind.hasMotion && motionEnabled ? Report05.id : c.kind.nativeReportFormat
+        let motion = motionEnabled || (bluetoothMotion && c.transport == .bluetooth)
+        return c.kind.hasMotion && motion ? Report05.id : c.kind.nativeReportFormat
     }
 
     public let ble = BLELink()

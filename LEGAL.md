@@ -102,7 +102,9 @@ driver), in order of preference:
    Inside the game, the helper only touches SDL's controller functions: it forwards rumble for Nintendo
    controllers, keeps SDL's N64 driver switched on, scales Nintendo controllers' stick values to their
    calibrated range, optionally presents them as Xbox controllers, and tells NS2 Bridge (on this Mac) which
-   SDL driver each Nintendo controller got. It doesn't read or change anything else.
+   SDL driver each Nintendo controller got, and presents Switch 2 controllers connected to NS2 Bridge over
+   Bluetooth as virtual SDL gamepads (games can't see them otherwise; this is how Steam Input works on a Mac
+   too). It doesn't read or change anything else.
 3. **Helper installed into the game** (only if you click "Install rumble into game"). This is for games
    whose signing blocks the other two methods.
    - What it does: NS2 Bridge places the helper next to the game's own SDL library, adds one load
@@ -131,8 +133,10 @@ of scope; don't use the helper or plug-in with them.
 
 - NS2 Bridge has **no telemetry, analytics, accounts, or internet access**.
 - The only network sockets are local (loopback only): `127.0.0.1:26761` carries rumble requests and
-  controller-driver reports from games to the app, and `127.0.0.1:26760` is the DSU server that
-  emulators on the same Mac can read controllers from. Neither is reachable from other computers.
+  controller-driver reports from games to the app, and Bluetooth controllers' input from the app back to the
+  helper in each game (on a loopback port the helper picks); `127.0.0.1:26760` is the DSU server that
+  emulators on the same Mac can read controllers from. None of them is reachable from other computers.
+- **Reset NS2 Bridge** (Setup) deletes everything NS2 Bridge stored or set up on the Mac.
 - Battery history is kept locally in `~/Library/Application Support/NS2Bridge/battery.json`, identified
   by controller type and, for the N64, its Bluetooth address. It never leaves your Mac.
 - Diagnostic recordings (`.ns2cap`) are saved only where you choose (the Desktop by default). They

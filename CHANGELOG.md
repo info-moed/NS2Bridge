@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1
+
+- **Bluetooth controllers in games** ✅, like Steam Input: in games launched from the Games tab or with the
+  helper installed, a Switch 2 Pro or GameCube controller connected over Bluetooth appears as a normal SDL
+  gamepad, with rumble, and gyro/accelerometer in SDL3 games (including sdl2-compat ones). It appears and
+  disappears with the controller, no setup. Verified in BattleShip (with gyro) and Wave Race 64 Recompiled.
+  Helper version 8: update installed copies from the Games tab.
+- Over Bluetooth, motion streams whenever Motion isn't Off (no emulator needed).
+- **Setup → Reset NS2 Bridge**: removes the helper from games (originals restored), the SDL settings and
+  login items, and all settings and data, then relaunches fresh.
+- The **welcome guide** opens on every new installation, also over settings macOS kept from an earlier one.
+- Updated "coming later" texts.
+
 ## 1.0.0
 
 First complete release: three controller families, verified on hardware where marked in the README.

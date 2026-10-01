@@ -1,7 +1,8 @@
 import Foundation
 
 /// Receives rumble requests from games running with ns2rumble.dylib (UDP 127.0.0.1:26761)
-/// and hands them to `onRumble` (the hub routes each one to the right controller).
+/// and hands them to `onRumble` (the hub routes each one to the right controller). In the other direction it
+/// streams Bluetooth controllers to every running helper (`sendVirtual`), which presents them as SDL gamepads.
 public final class GameRumbleServer: @unchecked Sendable {
     public static let port: UInt16 = 26761
 
@@ -28,6 +29,8 @@ public final class GameRumbleServer: @unchecked Sendable {
         public var driver: UInt8          // SDL GUID byte 14: 'h' = SDL's HIDAPI driver, 0 = IOKit
         public var sdlMajor: Int
         public var usesSDLDriver: Bool { driver == UInt8(ascii: "h") }
+        /// The helper's virtual gamepad (a Bluetooth controller).
+        public var isVirtual: Bool { driver == UInt8(ascii: "v") }
         /// The NSO N64 controller reads garbage without SDL's own driver.
         public var isProblem: Bool { productID == ClassicDevice.n64 && !usesSDLDriver }
     }
@@ -36,6 +39,35 @@ public final class GameRumbleServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ns2.game-rumble", qos: .userInteractive)
     private var fd: Int32 = -1
     private var source: DispatchSourceRead?
+    /// Helpers that said hello or kept alive in the last 3 s: port → last seen (all on 127.0.0.1).
+    private let helpersLock = NSLock()
+    private var helpers: [UInt16: Date] = [:]
+
+    /// Games with the helper running right now.
+    public var helperCount: Int { helpersLock.withLock { helpers.values.filter { -$0.timeIntervalSinceNow < 3 }.count } }
+
+    /// Send the Bluetooth controllers' current state to every running helper (any thread).
+    public func sendVirtual(_ pads: [VirtualGamepad]) {
+        let ports: [UInt16] = helpersLock.withLock {
+            helpers = helpers.filter { -$0.value.timeIntervalSinceNow < 3 }
+            return Array(helpers.keys)
+        }
+        guard fd >= 0, !ports.isEmpty else { return }
+        let packet = VirtualGamepad.packet(pads)
+        for port in ports {
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = port.bigEndian
+            addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+            _ = packet.withUnsafeBytes { b in
+                withUnsafePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        sendto(fd, b.baseAddress, b.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+            }
+        }
+    }
 
     public init() {}
 
@@ -58,7 +90,11 @@ public final class GameRumbleServer: @unchecked Sendable {
 
     private func receive() {
         var buf = [UInt8](repeating: 0, count: 64)
-        let n = recv(fd, &buf, buf.count, 0)
+        var from = sockaddr_in()
+        var fromLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let n = withUnsafeMutablePointer(to: &from) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { recvfrom(fd, &buf, buf.count, 0, $0, &fromLen) }
+        }
         guard n >= 8 else { return }
         let magic = String(bytes: buf[0..<4], encoding: .ascii)
         func u16(_ o: Int) -> UInt16 { UInt16(buf[o]) | UInt16(buf[o + 1]) << 8 }
@@ -67,7 +103,12 @@ public final class GameRumbleServer: @unchecked Sendable {
         if magic == "NS2B", n >= 12 {
             let r = DriverReport(pid: Int32(bitPattern: u32(4)), productID: Int(u16(8)), driver: buf[10], sdlMajor: Int(buf[11]))
             DispatchQueue.main.async { self.onDriver?(r) }
+        } else if magic == "NS2K" {                            // helper keep-alive (it wants Bluetooth gamepads)
+            let port = UInt16(bigEndian: from.sin_port)
+            helpersLock.withLock { helpers[port] = Date() }
         } else if magic == "NS2H" {
+            let port = UInt16(bigEndian: from.sin_port)
+            helpersLock.withLock { helpers[port] = Date() }
             let pid = Int32(bitPattern: u32(4))
             let sdl = n >= 9 ? Int(buf[8]) : 2
             DispatchQueue.main.async { self.onHello?(pid, sdl) }

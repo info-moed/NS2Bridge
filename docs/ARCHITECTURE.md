@@ -96,7 +96,14 @@ that `GameInstaller` adds to the game's own SDL library (originals backed up, re
      IOKit path are rescaled with NS2 Bridge's calibration (`NS2_STICKCAL_<pid>`), so full tilt reads 100%;
    - `SDL_PollEvent` / `SDL_PeepEvents`: 2 s after start and every 5 s, reports each Nintendo controller's
      SDL driver to NS2 Bridge (on change), so a misread N64 is flagged in the Games tab;
-   - `SDL_GameControllerOpen` / `SDL_OpenGamepad`: the same report when a controller is opened.
+   - `SDL_GameControllerOpen` / `SDL_OpenGamepad`: the same report when a controller is opened;
+   - `SDL_PollEvent` / `SDL_PeepEvents` / `SDL_PumpEvents` also service the **virtual gamepads**: games can't
+     see Switch 2 controllers over Bluetooth (NS2 Bridge holds the connection), so NS2 Bridge streams them to
+     every running helper (`VirtualGamepad`, UDP back to the helper's port, which it announces every second)
+     and the helper attaches an SDL virtual gamepad per controller, detaching it when updates stop. SDL3
+     (found among the loaded images, also when sdl2-compat loaded it privately) adds the gyro and
+     accelerometer as virtual sensors; SDL 2.24+ gets input and rumble. Rumble on a virtual pad goes to the
+     Bluetooth controller. The same model as Steam Input on macOS: games launched with the helper.
 4. carries a version marker (`NS2RUMBLE_VERSION=<n>`) so NS2 Bridge can offer to update installed copies.
 
 UDP packets to `127.0.0.1:26761` (little-endian): `NS2H` hello (pid, SDL major); `NS2R` rumble (low,

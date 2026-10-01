@@ -28,6 +28,7 @@ swift build && swift test            # 43 unit tests (one replays a real GameCub
 | Tool | Use |
 |---|---|
 | `.build/debug/ns2probe` | Probe CLI: `info`, `init`, `stream --out x.ns2cap`, `buttons` (guided), `press`, `hid <pid>`, `rumble`, `analyze <App>`, `sdl-mapping`. No arguments prints help. |
+| `scripts/vpad-check.sh <Game.app> [seconds]` | Links `tools/vpadcheck.c` against the game's own SDL with the helper injected; with a Switch 2 controller connected over Bluetooth, shows the virtual gamepad SDL sees, its values and (SDL3) gyro/accelerometer. |
 | `scripts/sdl-check.sh <Game.app> [seconds]` | Links `tools/sdlcheck.c` against the game's own SDL, simulates a hostile game, prints each Nintendo controller's SDL driver and phantom input. `SDLCHECK_HOSTILE=none|normal|override`, `SDLCHECK_AXES=1` (stick range as the game sees it), `NO_HELPER=1`, `NO_SETTINGS=1`. |
 | `NS2Bridge --render-drawings <dir>` | Saves the controller drawings and the five welcome pages as PNGs (light and dark) and quits, without touching controllers. (Buttons and switches show as placeholders off-screen.) |
 | `defaults delete local.ns2bridge welcome.done` | Shows the welcome guide again on next launch. |
@@ -101,6 +102,9 @@ swift build && swift test            # 43 unit tests (one replays a real GameCub
 19. **macOS lets a central ask for a 7.5 ms interval** through the private
     `setDesiredConnectionLatency:forPeripheral:` with bluetoothd level −12 (−25 looks faster on paper but
     collapses the stream). BLELink sends it at every connect (`BluetoothSpeed`).
+21. **SDL virtual gamepads:** triggers rest at −32768 (SDL maps the full axis range); SDL2's virtual
+    joysticks have no sensors (SDL3's do); **sdl2-compat loads SDL3 privately** (`RTLD_LOCAL`), so a global
+    `dlsym` misses SDL3's functions: find `libSDL3` among the loaded images and `dlopen(RTLD_NOLOAD)` it.
 20. **Research aid:** `defaults write local.ns2bridge BLEDebugCommands -bool true` makes NS2 Bridge accept
     distributed notifications `local.ns2bridge.debug.ble` (`cmd <hex>`, `sub 05|own`, `latency <level>`,
     `hps 1 <ms>`, `rate <hex>`; only setup, feature, light, vibration, battery and flash-*read* commands are accepted: `BLELink.debugAllowed`),

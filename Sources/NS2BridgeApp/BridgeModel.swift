@@ -158,6 +158,7 @@ final class BridgeModel {
     }
 
     private func updateMotion() {
+        hub.bluetoothMotion = motionMode != .off                        // games' virtual gamepads (helper)
         let slots = dsu.isRunning ? dsu.listeningSlots() : []
         emulatorWantsMotion = hub.controllers.contains { $0.kind.hasMotion && dsuSlots[$0.player].map(slots.contains) == true }
         let want = motionMode == .on || (motionMode == .automatic && emulatorWantsMotion)
@@ -196,14 +197,64 @@ final class BridgeModel {
     var welcomeDone: Bool = UserDefaults.standard.bool(forKey: "welcome.done") {
         didSet { UserDefaults.standard.set(welcomeDone, forKey: "welcome.done") }
     }
-    /// The welcome guide is on screen (first launch, or reopened from Setup).
-    var showWelcome = !UserDefaults.standard.bool(forKey: "welcome.done")
+    /// The welcome guide is on screen: on every new installation (also over old settings, which macOS keeps
+    /// when an app is deleted), or reopened from Setup.
+    var showWelcome = UserDefaults.standard.string(forKey: "welcome.install") != BridgeModel.installationID
+
+    /// This copy of the app: version plus the file identity of the installed bundle. A new install (unzipped or
+    /// copied) is a new file, so it gets the welcome guide again; relaunching the same copy doesn't.
+    static let installationID: String = {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        var st = stat()
+        let inode = stat(Bundle.main.bundlePath, &st) == 0 ? "\(st.st_dev)-\(st.st_ino)" : Bundle.main.bundlePath
+        return "\(version) \(inode)"
+    }()
 
     func finishWelcome(advanced: Bool, openAtLogin: Bool) {
         advancedMode = advanced
         if openAtLogin != launchAtLogin { setLaunchAtLogin(openAtLogin) }
         welcomeDone = true
+        UserDefaults.standard.set(Self.installationID, forKey: "welcome.install")
         showWelcome = false
+    }
+
+    // MARK: - Reset
+
+    /// While resetting: nothing is saved on the way out.
+    private var resetting = false
+
+    /// Back to a fresh install: the helper comes out of every game it was installed into (original files
+    /// restored), the Finder-wide SDL settings, login agent and login item go, every NS2 Bridge setting and
+    /// data file is deleted, and NS2 Bridge relaunches with the welcome guide. Game backups are kept if a game
+    /// couldn't be restored, so nothing is lost.
+    func resetEverything() {
+        var failed: [String] = []
+        for g in games where GameInstaller.isInstalled(g) {
+            do { try GameInstaller.uninstall(g) } catch { failed.append(g.deletingPathExtension().lastPathComponent) }
+        }
+        sdlEnabled = false                                     // unsets the SDL settings, removes the login agent
+        SDLLoginAgent.update(nil)
+        if launchAtLogin { setLaunchAtLogin(false) }
+        hub.unregisterForceFeedback()
+        let fm = FileManager.default
+        let support = GameInstaller.supportDir
+        for item in (try? fm.contentsOfDirectory(at: support, includingPropertiesForKeys: nil)) ?? []
+        where !(item.lastPathComponent == "Backups" && !failed.isEmpty) {
+            try? fm.removeItem(at: item)
+        }
+        if failed.isEmpty { try? fm.removeItem(at: support) }
+        if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+        if !failed.isEmpty {
+            // Remembered across the relaunch so the user can deal with those games.
+            UserDefaults.standard.set("Reset done, but the helper couldn't be removed from \(failed.joined(separator: ", ")); their backups are kept in Application Support/NS2Bridge/Backups.", forKey: "reset.message")
+        }
+        UserDefaults.standard.synchronize()
+        resetting = true
+        let p = Process()                                      // reopen once this copy has quit
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        try? p.run()
+        NSApp.terminate(nil)
     }
 
     /// The menu bar item with the controller pills didn't fit (hidden behind the camera notch).
@@ -322,7 +373,12 @@ final class BridgeModel {
         hub.onError = { [weak self] e in MainActor.assumeIsolated { self?.hubError = e } }
         hub.onBLEState = { [weak self] st in MainActor.assumeIsolated { self?.bleState = st } }
         hub.onBattery = { [weak self] c in MainActor.assumeIsolated { self?.batteryUpdated(c) } }
+        if let m = UserDefaults.standard.string(forKey: "reset.message") {     // from a reset that couldn't restore a game
+            message = m
+            UserDefaults.standard.removeObject(forKey: "reset.message")
+        }
         hub.motionEnabled = false                                      // decided once the DSU server is up
+        hub.bluetoothMotion = motionMode != .off
         hub.ble.speed = bluetoothSpeed
         hub.start()
         dsu.onClientsChanged = { [weak self] n in MainActor.assumeIsolated { self?.dsuClients = n } }
@@ -332,7 +388,7 @@ final class BridgeModel {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.hub.unregisterForceFeedback()      // leave controllers exactly as macOS set them up
-                self?.saveBatteryStore()
+                if self?.resetting != true { self?.saveBatteryStore() }
             }
         }
 
@@ -473,6 +529,13 @@ final class BridgeModel {
         if let i = c.lastInput { seen[c.id, default: []].formUnion(i.pressed) }
         if dsuEnabled, dsu.isRunning, let slot = dsuSlots[c.player], let i = c.lastInput {
             dsu.update(slot: slot, pad: dsuPad(c, i))
+        }
+        // Games can't see Switch 2 controllers over Bluetooth: the helper inside each running game presents
+        // them as SDL gamepads (the N64 uses classic Bluetooth, which macOS shows to games itself).
+        if c.transport == .bluetooth, c.kind != .n64, let i = c.lastInput, gameServer.helperCount > 0 {
+            var pad = dsuPad(c, i)
+            if motionMode == .off { pad.motion = nil }
+            gameServer.sendVirtual([VirtualGamepad(slot: UInt8(c.player), kind: c.kind, pad: pad, layout: buttonLayout)])
         }
         if c.id == selected?.id, r.first == Report05.id, let m = c.lastInput?.motion { orientationFilter.update(m) }
         if case .measuring = gyroCal, c.id == gyroCalID, r.first == Report05.id, let m = c.lastInput?.motion {

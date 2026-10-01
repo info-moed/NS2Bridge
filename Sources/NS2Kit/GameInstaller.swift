@@ -40,7 +40,7 @@ public enum GameInstaller {
 
     // MARK: Locations
 
-    static var supportDir: URL {
+    public static var supportDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NS2Bridge", isDirectory: true)
     }

@@ -98,8 +98,8 @@ struct WirelessPane: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Good to know").font(.headline)
-                    Text("• Over Bluetooth, games don't see the controller on their own (macOS only exposes it over USB). Support for games launched from the Games tab is coming next.")
-                    Text("• Reconnecting after the controller sleeps needs the SYNC button again for now.")
+                    Text("• Games see Bluetooth controllers through NS2 Bridge's helper, like Steam Input: in games launched from the Games tab or with the helper installed, the controller appears as a normal gamepad with rumble and, in SDL3 games, gyro.")
+                    Text("• Reconnecting after the controller sleeps needs the SYNC button again (NS2 Bridge doesn't do Nintendo's pairing).")
                     Text("• The NS2 Bridge app itself (live view, calibration, haptics, diagnostics) works fully over Bluetooth.")
                 }
                 .font(.caption).foregroundStyle(.secondary)
