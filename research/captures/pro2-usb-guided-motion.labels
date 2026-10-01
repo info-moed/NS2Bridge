@@ -1,0 +1,53 @@
+1010	still: lay the controller FLAT on the desk, hands off
+5014	pitch: tilt the top edge up/down repeatedly (like nodding)
+10058	still
+12086	roll: tilt left grip down / right grip down repeatedly
+17130	still
+19158	yaw: flat on desk, twist it left/right (like a steering wheel lying flat)
+24202	still
+26230	left stick: full circles
+30234	right stick: full circles
+34238	press and hold: A
+36786	release everything
+37826	press and hold: B
+40326	release everything
+41366	press and hold: X
+43914	release everything
+44954	press and hold: Y
+47502	release everything
+48542	press and hold: L
+51090	release everything
+52130	press and hold: R
+54678	release everything
+55718	press and hold: ZL
+58266	release everything
+59306	press and hold: ZR
+61854	release everything
+62894	press and hold: MINUS (-)
+65442	release everything
+66482	press and hold: PLUS (+)
+69030	release everything
+70070	press and hold: LEFT STICK CLICK
+72618	release everything
+73658	press and hold: RIGHT STICK CLICK
+76206	release everything
+77246	press and hold: HOME
+79795	release everything
+80834	press and hold: CAPTURE
+83382	release everything
+84422	press and hold: C (new button)
+86970	release everything
+88010	press and hold: GL (back-left paddle)
+90558	release everything
+91598	press and hold: GR (back-right paddle)
+94146	release everything
+95186	press and hold: D-PAD UP
+97734	release everything
+98774	press and hold: D-PAD DOWN
+101322	release everything
+102362	press and hold: D-PAD LEFT
+104910	release everything
+105949	press and hold: D-PAD RIGHT
+108498	release everything
+109538	done
+110058	END

@@ -1,0 +1,25 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Build outputs (rebuild with scripts/build-app.sh or scripts/package.sh)
+build/
+dist/
+
+# Controller captures can contain device serials — keep them out of the repo…
+*.ns2cap
+*.labels
+# …except the published research captures, checked to contain input reports only
+!research/captures/*.ns2cap
+!research/captures/*.labels
+
+.DS_Store
+
+# Unpacked handoff bundles
+NS2Bridge-handoff-*/
+
+# Python
+__pycache__/
+*.pyc

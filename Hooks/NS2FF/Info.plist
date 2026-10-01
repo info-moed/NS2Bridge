@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>NS2FF</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.ns2bridge.forcefeedback</string>
+	<key>CFBundleName</key>
+	<string>NS2FF</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>100</string>
+	<key>CFPlugInDynamicRegistration</key>
+	<string>NO</string>
+	<key>CFPlugInFactories</key>
+	<dict>
+		<key>3920F06A-59AC-42F3-9455-CD9629C27087</key>
+		<string>NS2FFFactory</string>
+	</dict>
+	<key>CFPlugInTypes</key>
+	<dict>
+		<key>F4545CE5-BF5B-11D6-A4BB-0003933E3E3E</key>
+		<array>
+			<string>3920F06A-59AC-42F3-9455-CD9629C27087</string>
+		</array>
+	</dict>
+</dict>
+</plist>

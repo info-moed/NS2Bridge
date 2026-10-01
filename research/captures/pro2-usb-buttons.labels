@@ -1,0 +1,53 @@
+824	press A
+4884	released
+4884	press B
+7325	released
+7326	press X
+9615	released
+9615	press Y
+11904	released
+11905	press L
+14824	released
+14824	press R
+17636	released
+17636	press ZL
+20212	released
+20212	press ZR
+22648	released
+22648	press MINUS (-)
+25448	released
+25448	press PLUS (+)
+28051	released
+28051	press LEFT STICK CLICK
+35075	released
+35075	press RIGHT STICK CLICK
+37859	released
+37859	press HOME
+43663	released
+43663	press CAPTURE
+46939	released
+46940	press C
+60511	released
+60511	press GL (back-left paddle)
+64100	released
+64100	press GR (back-right paddle)
+66592	released
+66592	press D-PAD UP
+69922	released
+69922	press D-PAD DOWN
+72126	released
+72126	press D-PAD LEFT
+74292	released
+74292	press D-PAD RIGHT
+76313	released
+79555	still-flat
+83557	still-end
+99732	motion PITCH
+114804	motion-end PITCH
+122908	motion ROLL
+139501	motion-end ROLL
+151612	motion YAW
+161813	motion-end YAW
+169351	still-flat-2
+173365	still-end
+173365	END
