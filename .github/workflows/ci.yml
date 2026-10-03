@@ -13,7 +13,7 @@ jobs:
     name: Build and test (macOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Toolchain
         run: xcodebuild -version && swift --version
       - name: Build (release)
@@ -47,7 +47,7 @@ jobs:
     name: Documentation links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check relative links in Markdown
         uses: lycheeverse/lychee-action@v2
         with:
