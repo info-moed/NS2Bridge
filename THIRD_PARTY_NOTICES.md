@@ -27,6 +27,19 @@ was written independently. Facts about the protocol are described in this projec
 | DS4Windows (`UdpServer.cs`, via Dolphin's notes) | — | The DSU button bit order, as documented by Dolphin. Reference only. |
 | [Kenix3/libultraship](https://github.com/Kenix3/libultraship): `ControllerStick.cpp`, `SDLAxisDirectionToAxisDirectionMapping.cpp` | MIT | Read to understand how games built on it combine several controllers and scale stick values (research §6). Reference only; nothing is used in NS2 Bridge. |
 
+## Website and project tooling
+
+Not part of the app or its download; used to build and present the project.
+
+| Project | License | Use |
+|---|---|---|
+| [just-the-docs](https://github.com/just-the-docs/just-the-docs) | MIT | Theme of the documentation website (loaded by GitHub Pages at build time). |
+| [Mermaid](https://github.com/mermaid-js/mermaid) | MIT | Renders the diagrams on the website and on GitHub. |
+| [actions/checkout](https://github.com/actions/checkout), [lycheeverse/lychee-action](https://github.com/lycheeverse/lychee-action) | MIT; MIT / Apache-2.0 | Continuous integration (checkout, documentation link check). |
+| [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 | CC BY 4.0 | Inspiration for `CODE_OF_CONDUCT.md`, which is written in this project's own words. |
+| [Keep a Changelog](https://keepachangelog.com/), [Semantic Versioning](https://semver.org/) | — | Formats followed by `CHANGELOG.md` and the version numbers. |
+| [Shields.io](https://shields.io/) | — | Status badges in the README (a hosted service). |
+
 ## SDL zlib license (reproduced for credit)
 
 ```

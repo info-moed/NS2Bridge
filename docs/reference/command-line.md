@@ -14,6 +14,7 @@ For developers and the curious. Paths are relative to the repository.
 |---|---|
 | `"NS2 Bridge.app/Contents/MacOS/NS2Bridge" --render-drawings <folder>` | Saves the controller drawings, the 3D motion view and the welcome pages as PNGs (light and dark), then quits. |
 | `"NS2 Bridge.app/Contents/MacOS/NS2Bridge" --render-intro <folder>` | Renders the startup animation as an animated GIF (`intro.gif`) plus a PNG every 10 frames, then quits. |
+| `"NS2 Bridge.app/Contents/MacOS/NS2Bridge" --render-social <file.png>` | The finished intro frame at 1280 × 640, GitHub's social-preview size. |
 | `open -n "NS2 Bridge.app" --args --screenshot-tour <folder>` | Opens the app in Demo mode with a clean state, saves every tab in light and dark as `tab-<name>-<light/dark>.png`, then quits. Use `open` (launching the binary directly from a terminal makes macOS stop it at the Bluetooth permission check). These are the images in the documentation. |
 
 ## Scripts

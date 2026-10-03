@@ -22,6 +22,10 @@ struct NS2BridgeApp: App {
             MainActor.assumeIsolated { IntroExporter.render(to: URL(fileURLWithPath: args[i + 1])) }
             exit(0)
         }
+        if let i = args.firstIndex(of: "--render-social"), i + 1 < args.count {
+            MainActor.assumeIsolated { IntroExporter.renderSocialPreview(to: URL(fileURLWithPath: args[i + 1])) }
+            exit(0)
+        }
         // `--screenshot-tour <folder>`: documentation screenshots of every tab (see ScreenshotTour).
         if let i = args.firstIndex(of: "--screenshot-tour"), i + 1 < args.count {
             ScreenshotTour.folder = URL(fileURLWithPath: args[i + 1])

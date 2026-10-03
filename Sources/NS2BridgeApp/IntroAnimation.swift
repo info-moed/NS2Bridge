@@ -283,4 +283,12 @@ enum IntroExporter {
         }
         CGImageDestinationFinalize(gif)
     }
+
+    /// The finished title frame at 1280 × 640: GitHub's social-preview size.
+    static func renderSocialPreview(to file: URL) {
+        let renderer = ImageRenderer(content: IntroFrame(t: 2.4).frame(width: 1280, height: 640))
+        renderer.scale = 1
+        guard let image = renderer.cgImage else { return }
+        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: file)
+    }
 }

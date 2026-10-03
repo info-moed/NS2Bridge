@@ -45,6 +45,13 @@ stores only a one-way **fingerprint**. N64 controllers are identified by their B
 - **Recordings** (`.ns2cap`, Diagnostics tab) can contain your controller's serial number: check them before sharing.
 - **Bluetooth diagnostics** go to the macOS system log on your Mac only; replies carrying the serial number aren't logged.
 
+## The website
+
+This site is hosted by GitHub Pages, under GitHub's
+[privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). It has no
+analytics or cookies of its own. The [Architecture](../ARCHITECTURE.md) page loads its diagram library (Mermaid) from
+the jsDelivr CDN.
+
 ## Permissions macOS asks for
 
 **Bluetooth** (wireless controllers), **Notifications** (battery alert, optional) and **App Management** (only when

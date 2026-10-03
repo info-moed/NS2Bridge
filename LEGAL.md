@@ -18,8 +18,11 @@ These names appear only to describe which hardware and software NS2 Bridge works
 (nominative use). The project does not use any Nintendo, Microsoft or Apple logo. The app icon is
 original artwork, a generic gamepad drawn in code (`scripts/make-icon.swift`), and the controller
 pictures inside the app are simple original diagrams drawn in code (rounded shapes and labeled
-buttons), not reproductions of any company's artwork or product photos. The short menu bar labels
-(GC, N64, PC2) are plain abbreviations.
+buttons), not reproductions of any company's artwork or product photos. The startup animation, the
+website's animated image and the social-preview image are original pixel art generated in code
+(`Sources/NS2BridgeApp/IntroAnimation.swift`): a generic blocky controller built from cubes, with the
+project's own name in a pixel font. The documentation's screenshots show only NS2 Bridge's own interface.
+The short menu bar labels (GC, N64, PC2) are plain abbreviations.
 
 If you fork or publish this project, keep it that way:
 - Don't add company logos or product photos.
@@ -142,6 +145,10 @@ of scope; don't use the helper or plug-in with them.
   helper in each game (on a loopback port the helper picks); `127.0.0.1:26760` is the DSU server that
   emulators on the same Mac can read controllers from. None of them is reachable from other computers.
 - **Reset NS2 Bridge** (Setup) deletes everything NS2 Bridge stored or set up on the Mac.
+- The **website** (info-moed.github.io/NS2Bridge) is hosted by GitHub Pages, under
+  [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
+  It has no analytics or cookies of its own; the page with diagrams loads the Mermaid library from the jsDelivr
+  CDN.
 - Battery history is kept locally in `~/Library/Application Support/NS2Bridge/battery.json`, identified
   by controller type and, for the N64, its Bluetooth address. It never leaves your Mac.
 - Diagnostic recordings (`.ns2cap`) are saved only where you choose (the Desktop by default). They
