@@ -1,0 +1,65 @@
+name: Bug report
+description: Something doesn't work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please check [Troubleshooting](https://github.com/info-moed/NS2Bridge/blob/main/docs/reference/troubleshooting.md) first.
+        A **diagnostics report** (Diagnostics tab → *Export Diagnostics Report…*) answers most of the questions below; it contains no serial numbers, addresses or personal paths.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "The GameCube controller's rumble doesn't work in Dolphin over Bluetooth; it works over USB."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Connect the controller over …
+        2. Open …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: controller
+    attributes:
+      label: Controller
+      multiple: true
+      options:
+        - Switch 2 Pro Controller
+        - NSO GameCube controller
+        - NSO N64 controller
+        - Other / not controller-specific
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      multiple: true
+      options:
+        - USB
+        - Bluetooth
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Game or emulator (name and version), if any
+      placeholder: "BattleShip 1.2, launched from the Games tab"
+  - type: input
+    id: versions
+    attributes:
+      label: NS2 Bridge version, macOS version, Mac model
+      placeholder: "NS2 Bridge 1.0.0 · macOS 15.6 · MacBook Air M2"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics report
+      description: Drag the exported report file here, or paste it.

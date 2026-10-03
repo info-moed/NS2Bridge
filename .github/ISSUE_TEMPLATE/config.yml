@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/info-moed/NS2Bridge/discussions
+    about: Ask and discuss in GitHub Discussions.
+  - name: Troubleshooting guide
+    url: https://github.com/info-moed/NS2Bridge/blob/main/docs/reference/troubleshooting.md
+    about: Common problems and their fixes.
+  - name: Security vulnerability
+    url: https://github.com/info-moed/NS2Bridge/security/advisories/new
+    about: Report privately, not as a public issue.

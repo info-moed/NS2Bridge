@@ -1,0 +1,43 @@
+# GitHub Pages site for NS2 Bridge (built from this docs/ folder; theme: just-the-docs, MIT).
+title: NS2 Bridge
+description: Switch 2 Pro, NSO GameCube and NSO N64 controllers on macOS, with rumble, gyro and fast Bluetooth.
+url: https://info-moed.github.io
+baseurl: /NS2Bridge
+remote_theme: just-the-docs/just-the-docs@v0.10.1
+plugins:
+  - jekyll-remote-theme
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-titles-from-headings
+relative_links:
+  enabled: true
+  collections: false
+color_scheme: light
+search_enabled: true
+heading_anchors: true
+aux_links:
+  "Download":
+    - "https://github.com/info-moed/NS2Bridge/releases/latest"
+  "GitHub":
+    - "https://github.com/info-moed/NS2Bridge"
+aux_links_new_tab: true
+back_to_top: true
+back_to_top_text: "Back to top"
+gh_edit_link: true
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/info-moed/NS2Bridge"
+gh_edit_branch: "main"
+gh_edit_source: docs
+gh_edit_view_mode: "edit"
+footer_content: >-
+  NS2 Bridge is an independent, unofficial project, not affiliated with or endorsed by Nintendo, Microsoft or Apple.
+  Nintendo Switch, Joy-Con, Nintendo GameCube and Nintendo 64 are trademarks of Nintendo.
+  <a href="https://github.com/info-moed/NS2Bridge/blob/main/LEGAL.md">Legal</a> ·
+  <a href="https://info-moed.github.io/NS2Bridge/reference/privacy.html">Privacy</a> ·
+  <a href="https://github.com/info-moed/NS2Bridge/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a> ·
+  MIT License.
+exclude:
+  - "*.ns2cap"
+
+mermaid:
+  version: "10.9.1"
