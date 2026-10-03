@@ -133,6 +133,10 @@ struct DiagnosticsPane: View {
                 if model.lastCaptureURL != nil, !model.capturing {
                     Button("Show recording in Finder") { model.revealCapture() }
                 }
+                Spacer()
+                Button { model.showDiagnosticsReport() } label: {
+                    Label("Export Diagnostics Report…", systemImage: "doc.text.magnifyingglass")
+                }
             }
         }
     }
@@ -170,6 +174,8 @@ struct SetupPane: View {
                     Text("Basic shows the everyday tabs. Advanced adds Button Test, Motion (gyro and DSU for emulators), Latency Test and Diagnostics.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Show the welcome guide again") { model.showWelcome = true }.padding(.top, 2)
+                    Toggle("Play the startup animation", isOn: $model.introEnabled)
+                        .help("The pixel-art intro when NS2 Bridge opens. Skipped when Reduce Motion is on; click or press a key to skip it.")
                 }
                 .padding(6)
             }
@@ -232,6 +238,28 @@ struct SetupPane: View {
             }
 
             GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $model.checkUpdatesAutomatically) { Text("Check for updates automatically").font(.headline) }
+                    Text("Once a day, NS2 Bridge asks GitHub whether a newer release exists, and nothing else: no data about you or your controllers is sent. Updates are never installed by themselves. You're on version \(BridgeModel.appVersion).")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button(model.checkingForUpdates ? "Checking…" : "Check Now") { model.checkForUpdates(userInitiated: true) }
+                        .disabled(model.checkingForUpdates)
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $model.demoMode) { Text("Demo mode").font(.headline) }
+                    Text("Try NS2 Bridge without a controller: a recorded Switch 2 Pro and GameCube controller appear as if connected, so every tab shows live data. Turns off when NS2 Bridge quits.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Coming later").font(.headline)
                     Text("Gyro as mouse · Joy-Con 2 · Bluetooth controllers in games that don't use SDL.")
@@ -258,5 +286,34 @@ struct SetupPane: View {
                 Text("The helper is removed from every game it was installed into (their original files are restored), the game settings and login items are removed, and all settings, calibrations, controller profiles and battery history are deleted. Your games themselves stay where they are.")
             }
         }
+    }
+}
+
+/// The diagnostics report, shown before anything leaves the app: the user reads it, then copies or saves it.
+struct DiagnosticsReportSheet: View {
+    @Environment(BridgeModel.self) private var model
+    let report: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Diagnostics report").font(.title2.bold())
+            Text("For bug reports: attach the saved file to the issue. It contains no serial numbers, full Bluetooth addresses, emails or personal folder names; read it below before sharing.")
+                .font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                Text(report).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack {
+                Button("Report an Issue on GitHub…") { model.openURL(BridgeModel.Links.newIssue) }
+                Spacer()
+                Button("Copy") { model.copyDiagnosticsReport(report) }
+                Button("Save…") { model.saveDiagnosticsReport(report) }
+                Button("Done") { model.diagnosticsReport = nil }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 760, height: 600)
     }
 }

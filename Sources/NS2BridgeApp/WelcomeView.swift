@@ -12,7 +12,7 @@ struct WelcomeView: View {
     var body: some View {
         @Bindable var model = model
         WelcomeContent(page: $page, advanced: $advanced, openAtLogin: $openAtLogin,
-                       sdlEnabled: $model.sdlEnabled,
+                       sdlEnabled: $model.sdlEnabled, checkUpdates: $model.checkUpdatesAutomatically,
                        connected: model.controllers.sorted { $0.player < $1.player },
                        finish: { model.finishWelcome(advanced: advanced, openAtLogin: openAtLogin) })
             .onAppear { advanced = model.advancedMode; openAtLogin = model.launchAtLogin || !model.welcomeDone }
@@ -25,6 +25,7 @@ struct WelcomeContent: View {
     @Binding var advanced: Bool
     @Binding var openAtLogin: Bool
     @Binding var sdlEnabled: Bool
+    @Binding var checkUpdates: Bool
     let connected: [ControllerSummary]
     let finish: () -> Void
 
@@ -178,6 +179,14 @@ struct WelcomeContent: View {
             }
             .toggleStyle(.switch)
             .padding(.top, 6)
+            Toggle(isOn: $checkUpdates) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tell me when an update is available").font(.headline)
+                    Text("Once a day, NS2 Bridge asks GitHub for the latest version. Nothing about you is sent.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
             Spacer()
         }
     }

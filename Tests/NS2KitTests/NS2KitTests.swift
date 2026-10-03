@@ -1,5 +1,6 @@
 import XCTest
 @testable import NS2Kit
+import simd
 
 final class NS2KitTests: XCTestCase {
     func testRumbleReportLayout() {
@@ -324,5 +325,111 @@ final class NS2KitTests: XCTestCase {
                       RumbleRoute(productID: 0x2069, player: 2, deviceID: nil, item: "ble")]
         XCTAssertEqual(RumbleRoute.choose(routes, productID: 0x2069, deviceID: RumbleRoute<String>.bluetoothDevice, rank: -1), "ble")
         XCTAssertEqual(RumbleRoute.choose(routes, productID: 0x2069, deviceID: 42, rank: -1), "usb")
+    }
+
+    func testDemoReport05RoundTripsThroughTheDecoder() {
+        var r09 = [UInt8](repeating: 0, count: 64)
+        r09[0] = 0x09; r09[2] = 7 << 2                                      // battery level 7
+        let b = ProButtons([.a, .zl, .home, .dpadUp]).rawValue
+        r09[3] = UInt8(b & 0xFF); r09[4] = UInt8(b >> 8 & 0xFF); r09[5] = UInt8(b >> 16 & 0xFF)
+        r09[6...11] = [0x00, 0x08, 0x80, 0xFF, 0x0F, 0x40]
+        let m = DemoMotion.sample(at: 1.3)
+        let r05 = Report05.make(from: r09, accel: m.accel, gyro: m.gyro, micros: 123_456)!
+        let s05 = ControllerState(report05: r05)!, s09 = ControllerState(report: r09)!
+        XCTAssertEqual(s05.buttons, s09.buttons)
+        XCTAssertEqual(s05.left, s09.left); XCTAssertEqual(s05.right, s09.right)
+        let d = MotionDecoder().decode(r05)!
+        XCTAssertEqual(d.timestampMicros, 123_456)
+        XCTAssertEqual(simd_length(d.accel - m.accel), 0, accuracy: 0.001)   // 1 LSB ≈ 0.00024 g
+        XCTAssertEqual(simd_length(d.gyro - m.gyro), 0, accuracy: 0.1)       // 1 LSB ≈ 0.06 °/s
+        XCTAssertEqual(simd_length(m.accel), 1, accuracy: 1e-9)              // gravity only
+    }
+
+    func testBLECommandQueueWaitsForEachReply() {
+        var q = BLECommandQueue()
+        var ran: [String] = []
+        let mask: [UInt8] = [0x0C, 0x91, 0x01, 0x02, 0x00, 0x04, 0x00, 0x00, 0x2F, 0, 0, 0]
+        let enable: [UInt8] = [0x0C, 0x91, 0x01, 0x04, 0x00, 0x04, 0x00, 0x00, 0x2F, 0, 0, 0]
+        func sent(_ out: [BLECommandQueue.Output]) -> [[UInt8]] {
+            out.compactMap { if case .send(let c) = $0 { return c } else if case .run(let a) = $0 { a(); return nil } else { return nil } }
+        }
+        // Only the first command goes out; the second waits for the first one's reply.
+        XCTAssertEqual(sent(q.enqueue([.command(mask), .command(enable), .run { ran.append("descriptor") }])), [mask])
+        XCTAssertEqual(q.awaiting?.command, 0x0C); XCTAssertEqual(q.awaiting?.sub, 0x02)
+        XCTAssertTrue(sent(q.enqueue([.command(enable)])).isEmpty)                   // busy: queued, nothing sent
+        XCTAssertNil(q.reply([0x0B, 0x01, 0x01, 0x03, 0x10, 0x78, 0, 0]))            // a battery reply: not ours
+        XCTAssertNil(q.reply([0x0C, 0x01, 0x01, 0x04]))                              // wrong subcommand
+        XCTAssertEqual(sent(q.reply([0x0C, 0x01, 0x01, 0x02, 0x10, 0x78, 0, 0])!), [enable])
+        // A timeout carries on; the action between commands runs in order.
+        XCTAssertEqual(sent(q.timedOut()), [enable])
+        XCTAssertEqual(ran, ["descriptor"])
+        XCTAssertTrue(sent(q.reply([0x0C, 0x01, 0x01, 0x04])!).isEmpty)
+        XCTAssertTrue(q.isIdle)
+        _ = q.enqueue([.command(mask), .command(enable)]); q.reset()
+        XCTAssertTrue(q.isIdle)
+    }
+
+    func testBluetoothSpeedFallbackThreshold() {
+        XCTAssertFalse(BluetoothSpeed.fallsBack(reportsIn3Seconds: 400))          // 7.5 ms working (133/s)
+        XCTAssertFalse(BluetoothSpeed.fallsBack(reportsIn3Seconds: 200))          // even 15 ms would pass
+        XCTAssertTrue(BluetoothSpeed.fallsBack(reportsIn3Seconds: 12))            // the collapse seen at level −25
+    }
+
+    func testDiagnosticsScrubsPersonalData() {
+        // Built from pieces so the repository's own privacy scan doesn't flag these made-up values.
+        let users = "/" + "Users/", serial = "H" + "AA" + "12345678901", mail = "alex" + "@" + "example.com"
+        let raw = """
+        game: \(users)alex/Games/WaveRace.app · other: \(users)sam/x
+        N64 0A:1B:2C:3D:4E:5F · serial \(serial) · mail \(mail)
+        keep: 127.0.0.1:26760 · 0x2069 · 12:34:56.789 · ~/Library
+        """
+        let s = Diagnostics.scrub(raw, home: users + "alex")
+        XCTAssertFalse(s.contains("alex")); XCTAssertFalse(s.contains("sam/"))
+        XCTAssertTrue(s.contains("~/Games/WaveRace.app")); XCTAssertTrue(s.contains(users + "…/x"))
+        XCTAssertTrue(s.contains("0A:1B:2C:••:••:••")); XCTAssertFalse(s.contains("3D:4E:5F"))
+        XCTAssertTrue(s.contains("[serial]")); XCTAssertTrue(s.contains("[email]"))
+        XCTAssertTrue(s.contains("127.0.0.1:26760")); XCTAssertTrue(s.contains("12:34:56.789"))   // times aren't addresses
+    }
+
+    func testUpdateCheckComparesVersionsAndParsesGitHub() {
+        XCTAssertTrue(UpdateCheck.isNewer("v1.1.0", than: "1.0.1"))
+        XCTAssertTrue(UpdateCheck.isNewer("1.10.0", than: "1.9.9"))
+        XCTAssertFalse(UpdateCheck.isNewer("1.1.0", than: "1.1.0"))
+        XCTAssertFalse(UpdateCheck.isNewer("1.1", than: "1.1.0"))
+        XCTAssertFalse(UpdateCheck.isNewer("1.0.9", than: "1.1.0"))
+        let json = """
+        {"tag_name": "v1.2.0", "html_url": "https://github.com/info-moed/NS2Bridge/releases/tag/v1.2.0", "body": "Notes",
+         "assets": [{"name": "NS2Bridge-macOS.zip", "browser_download_url": "https://example.invalid/a.zip"},
+                    {"name": "NS2Bridge-1.2.0-macOS.zip", "browser_download_url": "https://example.invalid/b.zip"}]}
+        """
+        let r = UpdateCheck.parse(Data(json.utf8))
+        XCTAssertEqual(r?.version, "1.2.0")
+        XCTAssertEqual(r?.notes, "Notes")
+        XCTAssertEqual(r?.download?.absoluteString, "https://example.invalid/b.zip")
+        XCTAssertNil(UpdateCheck.parse(Data("{}".utf8)))
+    }
+
+    func testChangelogSection() {
+        let text = """
+        # Changelog
+
+        ## [1.1.0] - 2026-10-04
+
+        ### Added
+        - Demo mode.
+
+        ## [1.0.1] - 2026-10-01
+
+        - Bluetooth in games.
+
+        ## 1.0.0
+
+        - First release.
+        """
+        XCTAssertEqual(Changelog.section(text, version: "1.1.0"), "### Added\n- Demo mode.")
+        XCTAssertEqual(Changelog.section(text, version: "1.0.1"), "- Bluetooth in games.")
+        XCTAssertEqual(Changelog.section(text, version: "1.0.0"), "- First release.")
+        XCTAssertNil(Changelog.section(text, version: "1.0"))        // no prefix matches: 1.0 isn't 1.0.1
+        XCTAssertNil(Changelog.section(text, version: "2.0.0"))
     }
 }

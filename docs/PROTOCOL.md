@@ -1,3 +1,9 @@
+---
+title: Controller protocol
+parent: For developers
+nav_order: 4
+---
+
 # Controller protocol notes
 
 Switch 2 Pro Controller (§1–8), NSO GameCube (§7b) and NSO N64 (§7c). The raw evidence and the scripts
@@ -140,7 +146,7 @@ motors, both bands, at a 4 ms cadence. ✅
 
 Command `0A 91 00 02 … <id>` plays built-in vibration samples (ids 0–7). 📚
 
-## 6. Bluetooth LE (✅ with the NSO GameCube; Pro Controller not yet verified)
+## 6. Bluetooth LE (✅ NSO GameCube and Switch 2 Pro, including motion)
 
 - The controller advertises manufacturer data with company ID `0x0553`, then VID and PID. Hold the
   **sync** button to make it connectable.

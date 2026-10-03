@@ -1,3 +1,9 @@
+---
+title: For developers
+nav_order: 4
+has_children: true
+---
+
 # Development notes
 
 For contributors and maintainers: how to build and test, what's verified, and the facts that took the
@@ -10,7 +16,7 @@ hardware-tested by the maintainer; see [research/README.md](../research/README.m
 ## Build, test, release
 
 ```bash
-swift build && swift test            # 43 unit tests (one replays a real GameCube capture from research/)
+swift build && swift test            # 55 unit tests (one replays a real GameCube capture from research/)
 ./scripts/build-app.sh               # → build/NS2 Bridge.app (universal, ad-hoc signed)
 ./scripts/package.sh                 # clean → tests → icon → app → dist/NS2Bridge-<version>-macOS.zip + .sha256
 ```
@@ -132,20 +138,7 @@ swift build && swift test            # 43 unit tests (one replays a real GameCub
 - Over Bluetooth, the Switch 2 Pro and GameCube are available to NS2 Bridge and DSU clients only, not to
   games reading SDL directly.
 
-## Publishing to GitHub
+## Releasing
 
-Releases are published from a clean export (single commit, neutral author) so no personal paths or
-identity end up in the history:
-
-```bash
-git init NS2Bridge && cd NS2Bridge            # a fresh copy of the tree, no build outputs
-git config user.name "NS2 Bridge"
-git config user.email "ns2bridge@users.noreply.github.com"
-git add -A && git commit -m "NS2 Bridge 1.0.0"
-git tag v1.0.0
-git remote add origin https://github.com/<your-account>/NS2Bridge.git
-git push -u origin main --tags
-```
-
-Then create a GitHub release for `v1.0.0` and attach `NS2Bridge-1.0.0-macOS.zip` (paste its SHA-256 in
-the notes). Use a GitHub account that doesn't show your personal details if you want to stay anonymous.
+See [Releasing](development/releasing.md): versioning, the release checklist, and the tag-triggered release workflow.
+Testing, including the hardware QA checklist: [Testing](development/testing.md).

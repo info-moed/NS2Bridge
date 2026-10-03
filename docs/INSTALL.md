@@ -1,3 +1,9 @@
+---
+title: Install and uninstall
+parent: User guide
+nav_order: 14
+---
+
 # Installing NS2 Bridge
 
 ## Requirements
@@ -10,10 +16,10 @@
 
 ## Option A: install the release zip
 
-1. Download `NS2Bridge-1.0.1-macOS.zip` from the [GitHub Releases page](https://github.com/info-moed/NS2Bridge/releases). Optionally, check it against the
+1. Download `NS2Bridge-<version>-macOS.zip` from the [GitHub Releases page](https://github.com/info-moed/NS2Bridge/releases). Optionally, check it against the
    published SHA-256:
    ```bash
-   shasum -a 256 NS2Bridge-1.0.1-macOS.zip
+   shasum -a 256 NS2Bridge-*-macOS.zip
    ```
 2. Double-click the zip, then drag **NS2 Bridge.app** into **Applications**.
 3. **First launch (one time only).** NS2 Bridge isn't signed with a paid Apple Developer ID, so macOS
@@ -41,6 +47,16 @@
 | App Management | Only when you install the helper into a game | System Settings → Privacy & Security → App Management |
 
 Because the app is ad-hoc signed, macOS may ask again after you install a newer build.
+
+### With Homebrew
+
+```bash
+brew install --cask info-moed/tap/ns2bridge
+```
+
+The cask follows each release automatically. The first launch still needs **Open Anyway** (step 3 above).
+`brew upgrade --cask ns2bridge` updates it; `brew uninstall --zap ns2bridge` removes it with its settings (use
+**Setup → Reset NS2 Bridge…** first if you installed the helper into games, so their original files are restored).
 
 ## Option B: build from source
 

@@ -1,3 +1,9 @@
+---
+title: Architecture
+parent: For developers
+nav_order: 3
+---
+
 # How NS2 Bridge works
 
 ```mermaid
@@ -29,6 +35,7 @@ flowchart LR
   HUB --> HE --> HL & BL
   HUB --> DSU -- "emulators" --> EMU["Dolphin / Cemu / Ryujinx"]
   SDL --> H -- "rumble, driver reports" --> GRS --> HUB
+  GRS -- "Bluetooth controllers (NS2V)" --> H -- "virtual gamepads" --> SDL
   SDL --> FF -- "rumble" --> GRS
 ```
 
@@ -108,6 +115,51 @@ that `GameInstaller` adds to the game's own SDL library (originals backed up, re
 
 UDP packets to `127.0.0.1:26761` (little-endian): `NS2H` hello (pid, SDL major); `NS2R` rumble (low,
 high, duration ms, product ID); `NS2B` driver report (pid, product ID, SDL GUID byte 14, SDL major).
+
+## Sequences
+
+**Connecting a Switch 2 controller over Bluetooth** (`BLELink`). Commands go one at a time, each after its reply.
+
+```mermaid
+sequenceDiagram
+  participant App as NS2 Bridge (BLELink)
+  participant BT as macOS Bluetooth
+  participant C as Controller
+  App->>BT: scan (Nintendo company ID 0x0553)
+  C-->>App: advertisement (SYNC held)
+  App->>BT: connect, discover characteristics
+  App->>C: subscribe: own report (0x09 / 0x0A) or 0x05 for motion
+  App->>BT: setDesiredConnectionLatency(level −12) → 7.5 ms
+  loop one command per reply
+    App->>C: 0C 02 / 0C 04 feature mask, enable
+    C-->>App: reply 0C 01 …
+  end
+  App->>C: 0C 05 disable IMU → 0C 06 configure → 0C 04 enable IMU (Pro)
+  C-->>App: feature info: IMU 07 (configured)
+  C-->>App: input reports, one per connection event (133/s)
+```
+
+**A Bluetooth controller inside a game** (helper's virtual gamepad):
+
+```mermaid
+sequenceDiagram
+  participant G as Game (SDL)
+  participant H as Helper (in the game)
+  participant A as NS2 Bridge
+  H->>A: NS2K keep-alive (every second)
+  A->>H: NS2V state at the report rate
+  G->>H: SDL_PollEvent (wrapped)
+  H->>G: SDL_AttachVirtualJoystick (SDL3: with sensors)
+  G->>G: gamepad added; game opens it
+  loop each frame
+    G->>H: virtual gamepad Update callback
+    H->>G: axes, buttons, gyro/accel
+  end
+  G->>H: rumble
+  H->>A: NS2R, device = Bluetooth
+  A->>A: rumble the Bluetooth controller
+  Note over H,A: no NS2V for 1 s → the helper detaches the gamepad
+```
 
 ## Rumble without touching the game (`Hooks/NS2FF`)
 

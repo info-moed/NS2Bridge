@@ -62,6 +62,9 @@ struct LatencyPane: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Report interval histogram").font(.headline)
                 Histogram(buckets: shown.histogram, expected: e.intervalMs)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Report interval histogram")
+                    .accessibilityValue(shown.samples > 0 ? String(format: "Most reports %.0f to %.0f milliseconds apart; expected %.1f", Double(2 * (shown.histogram.firstIndex(of: shown.histogram.max() ?? 0) ?? 0)), Double(2 * (shown.histogram.firstIndex(of: shown.histogram.max() ?? 0) ?? 0) + 2), e.intervalMs) : "No data yet")
                     .frame(height: 110)
             }
 

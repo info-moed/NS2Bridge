@@ -51,6 +51,10 @@ final class ControllerStatusItems: NSObject {
         pillRanges = ranges
         item?.button?.toolTip = sorted.map { "P\($0.player) · \($0.kind.displayName)\($0.transport == .bluetooth ? " · Bluetooth" : "")" }
             .joined(separator: "\n") + "\nClick a controller for options · double-click to turn it off"
+        // The pills are one image: VoiceOver reads this instead.
+        item?.button?.setAccessibilityLabel("NS2 Bridge controllers: " + sorted.map {
+            "Player \($0.player), \($0.kind.displayName)\($0.transport == .bluetooth ? ", Bluetooth" : ""), battery \(Int(($0.battery * 100).rounded())) percent"
+        }.joined(separator: "; "))
     }
 
     /// Is the item actually on screen? On a MacBook with a camera notch and a full menu bar, macOS
@@ -114,6 +118,21 @@ final class ControllerStatusItems: NSObject {
         }
         menu.addItem(.separator())
         menu.addItem(MenuAction("Open NS2 Bridge…") { model.openMainWindow?(); NSApp.activate(ignoringOtherApps: true) })
+        if let u = model.availableUpdate {
+            menu.addItem(MenuAction("Update Available: NS2 Bridge \(u.version)…") { model.downloadUpdate() })
+        }
+        let help = NSMenu()
+        help.addItem(MenuAction("About NS2 Bridge") { model.showAbout() })
+        help.addItem(MenuAction("NS2 Bridge Help") { model.openURL(BridgeModel.Links.site) })
+        help.addItem(MenuAction("Troubleshooting") { model.openURL(BridgeModel.Links.site.appendingPathComponent("reference/troubleshooting.html")) })
+        help.addItem(MenuAction("Check for Updates…") { model.checkForUpdates(userInitiated: true) })
+        help.addItem(.separator())
+        help.addItem(MenuAction("Export Diagnostics Report…") { model.exportDiagnosticsFromMenu() })
+        help.addItem(MenuAction("Report an Issue…") { model.openURL(BridgeModel.Links.newIssue) })
+        let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        helpItem.submenu = help
+        menu.addItem(helpItem)
+        menu.addItem(.separator())
         menu.addItem(MenuAction("Quit NS2 Bridge") { NSApp.terminate(nil) })
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
     }

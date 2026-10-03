@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the app version
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME doesn't match version $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Package (clean build, tests, universal app, zip, SHA-256)
+        run: ./scripts/package.sh
+      - name: Privacy scan of the release contents
+        run: |
+          mkdir -p /tmp/release-check
+          ditto -x -k "dist/NS2Bridge-$VERSION-macOS.zip" /tmp/release-check
+          ./scripts/privacy-scan.sh /tmp/release-check
+      - name: Release notes from the changelog
+        run: |
+          awk -v v="$VERSION" '$0 ~ "^## \\[?" v "\\]?" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > /tmp/notes.md
+          sha=$(cut -c1-64 "dist/NS2Bridge-$VERSION-macOS.zip.sha256")
+          {
+            echo
+            echo "**Install:** download \`NS2Bridge-$VERSION-macOS.zip\`, drag NS2 Bridge.app to Applications, then allow it once in System Settings → Privacy & Security → Open Anyway. Guide: [Getting started](https://info-moed.github.io/NS2Bridge/guide/getting-started.html). Homebrew: \`brew install --cask info-moed/tap/ns2bridge\`."
+            echo
+            echo "**SHA-256** (\`NS2Bridge-$VERSION-macOS.zip\`): \`$sha\`"
+          } >> /tmp/notes.md
+          cat /tmp/notes.md
+      - name: Stable-named copy for the website's Download button
+        run: cp "dist/NS2Bridge-$VERSION-macOS.zip" dist/NS2Bridge-macOS.zip
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "NS2 Bridge $VERSION" --notes-file /tmp/notes.md --latest \
+            "dist/NS2Bridge-$VERSION-macOS.zip" "dist/NS2Bridge-$VERSION-macOS.zip.sha256" dist/NS2Bridge-macOS.zip

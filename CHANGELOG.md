@@ -1,6 +1,32 @@
 # Changelog
 
-## 1.0.1
+All notable changes to NS2 Bridge. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
+versions follow [semantic versioning](https://semver.org).
+
+## [1.1.0] - 2026-10-03
+
+### Added
+- **Startup animation**: a pixel-art Switch 2 Pro Controller assembles from 3D voxels and spins into view. Click or
+  press a key to skip; off with Reduce Motion, or in Setup.
+- **Demo mode** (Setup): explore every tab with a recorded Switch 2 Pro and GameCube controller, no hardware needed.
+- **Diagnostics report** (Diagnostics tab, and the menu bar menu → Help): versions, settings, controllers, latency,
+  games and recent log for bug reports, with personal data removed and shown to you before it's saved.
+- **Update check**: *Check for Updates…* in the menu bar menu, and an opt-in daily check (Setup; offered in the welcome
+  tour) that asks GitHub for the latest release. A banner shows an available update; nothing installs by itself.
+- **What's new** after an update, from this changelog.
+- **Help** in the menu bar menus (About, user guide, troubleshooting, report an issue) and a **?** button that opens
+  the guide page for the current tab.
+- **Homebrew**: `brew install --cask info-moed/tap/ns2bridge`.
+- **VoiceOver** labels for the controller drawings, menu bar pills, latency histogram and player badges.
+- **Documentation website** (info-moed.github.io/NS2Bridge): user guide for every tab, emulator setup, compatibility,
+  troubleshooting, FAQ, privacy, glossary, settings and files, helper protocol, screenshots in light and dark mode.
+- **Project files**: contributing guide, code of conduct, security policy, support page, issue forms.
+
+### Changed
+- Bluetooth commands go through a tested queue (same behavior: one command per reply).
+- Releases are built and published by GitHub Actions, with a privacy scan of every release.
+
+## [1.0.1] - 2026-10-01
 
 - **Bluetooth controllers in games** ✅, like Steam Input: in games launched from the Games tab or with the
   helper installed, a Switch 2 Pro or GameCube controller connected over Bluetooth appears as a normal SDL
@@ -13,7 +39,7 @@
 - The **welcome guide** opens on every new installation, also over settings macOS kept from an earlier one.
 - Updated "coming later" texts.
 
-## 1.0.0
+## [1.0.0] - 2026-10-01
 
 First complete release: three controller families, verified on hardware where marked in the README.
 
@@ -126,3 +152,7 @@ First complete release: three controller families, verified on hardware where ma
 - Latency test with expected vs. measured results.
 - `ns2probe` command-line tool for reverse engineering.
 - Universal build (Apple Silicon + Intel), ad-hoc signed. No Apple Developer account needed.
+
+[1.1.0]: https://github.com/info-moed/NS2Bridge/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/info-moed/NS2Bridge/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/info-moed/NS2Bridge/releases/tag/v1.0.0

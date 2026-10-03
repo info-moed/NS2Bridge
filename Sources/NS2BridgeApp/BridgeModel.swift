@@ -218,6 +218,93 @@ final class BridgeModel {
         showWelcome = false
     }
 
+    // MARK: - Updates
+
+    /// Once a day, ask GitHub whether a newer release exists (Setup; offered in the welcome tour). Off by default:
+    /// NS2 Bridge doesn't touch the network unless asked.
+    var checkUpdatesAutomatically = UserDefaults.standard.bool(forKey: "updates.auto") {
+        didSet {
+            UserDefaults.standard.set(checkUpdatesAutomatically, forKey: "updates.auto")
+            if checkUpdatesAutomatically { checkForUpdates(userInitiated: false) }
+        }
+    }
+    /// A newer release, once found (shown as a banner and in the menu bar menu).
+    var availableUpdate: UpdateCheck.Release?
+    var checkingForUpdates = false
+
+    static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0" }
+
+    func checkForUpdates(userInitiated: Bool) {
+        guard !checkingForUpdates else { return }
+        checkingForUpdates = true
+        Task { @MainActor in
+            defer { checkingForUpdates = false }
+            UserDefaults.standard.set(Date(), forKey: "updates.lastCheck")
+            do {
+                guard let latest = try await UpdateCheck.fetchLatest() else { throw URLError(.badServerResponse) }
+                if UpdateCheck.isNewer(latest.version, than: Self.appVersion) {
+                    availableUpdate = latest
+                } else if userInitiated {
+                    message = "NS2 Bridge \(Self.appVersion) is the latest version."
+                }
+            } catch {
+                if userInitiated { message = "Couldn't check for updates: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    /// Automatic check when due (at launch and hourly from the watchdog; at most once a day).
+    func checkForUpdatesIfDue() {
+        guard checkUpdatesAutomatically else { return }
+        let last = UserDefaults.standard.object(forKey: "updates.lastCheck") as? Date ?? .distantPast
+        if Date().timeIntervalSince(last) > 24 * 3600 { checkForUpdates(userInitiated: false) }
+    }
+
+    func downloadUpdate() {
+        guard let u = availableUpdate else { return }
+        openURL(u.page)                                         // the release page: notes, download, checksum
+    }
+
+    // MARK: - What's new
+
+    /// After an update: this version's changelog section, shown once (after the welcome tour if that's open).
+    var whatsNew: String? = BridgeModel.whatsNewForThisLaunch()
+
+    static func whatsNewForThisLaunch() -> String? {
+        let d = UserDefaults.standard
+        // Versions before 1.1 didn't record themselves: earlier settings mean this launch is an update.
+        let previous = d.string(forKey: "app.lastVersion") ?? (d.object(forKey: "welcome.done") != nil ? "1.0" : nil)
+        d.set(appVersion, forKey: "app.lastVersion")
+        guard let previous, previous != appVersion,
+              let url = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return Changelog.section(text, version: appVersion)
+    }
+
+    // MARK: - Startup animation
+
+    /// Setup → Startup animation (on by default).
+    var introEnabled = UserDefaults.standard.object(forKey: "ui.intro") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(introEnabled, forKey: "ui.intro") }
+    }
+    /// The intro is on screen (the welcome tour waits for it).
+    var introPlaying = false
+
+    // MARK: - Demo mode
+
+    /// Two recorded controllers (a Switch 2 Pro and a GameCube controller) replayed as if connected, to explore
+    /// NS2 Bridge without hardware. Not saved: Demo mode is always off at launch.
+    var demoMode = false {
+        didSet {
+            guard demoMode != oldValue else { return }
+            if demoMode { hub.startDemo(Self.demoClips()) } else { hub.stopDemo() }
+        }
+    }
+
+    static func demoClips() -> [DemoClip] {
+        Bundle.main.resourceURL.map { DemoClip.load(from: $0.appendingPathComponent("Demo")) } ?? []
+    }
+
     // MARK: - Reset
 
     /// While resetting: nothing is saved on the way out.
@@ -373,6 +460,10 @@ final class BridgeModel {
         hub.onError = { [weak self] e in MainActor.assumeIsolated { self?.hubError = e } }
         hub.onBLEState = { [weak self] st in MainActor.assumeIsolated { self?.bleState = st } }
         hub.onBattery = { [weak self] c in MainActor.assumeIsolated { self?.batteryUpdated(c) } }
+        checkForUpdatesIfDue()
+        Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkForUpdatesIfDue() }
+        }
         if let m = UserDefaults.standard.string(forKey: "reset.message") {     // from a reset that couldn't restore a game
             message = m
             UserDefaults.standard.removeObject(forKey: "reset.message")
@@ -889,8 +980,14 @@ final class BridgeModel {
     }
 
     func copyLatencyReport(_ s: LatencyMonitor.Snapshot) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(latencyText(s), forType: .string)
+        message = "Latency results copied to the clipboard."
+    }
+
+    func latencyText(_ s: LatencyMonitor.Snapshot) -> String {
         let e = LatencyMonitor.expectation(for: s.link, kind: selectedKind, bluetoothIntervalMs: bluetoothExpectedMs)
-        let text = String(format: """
+        return String(format: """
         NS2 Bridge latency test — \(selectedKind.displayName) — %@
         Report rate: %.1f Hz (expected %.0f Hz)
         Interval: mean %.2f ms, median %.2f ms, 99th %.2f ms, max %.2f ms (expected %.1f ms)
@@ -901,9 +998,101 @@ final class BridgeModel {
         """, s.link.rawValue, s.rateHz, 1000 / e.intervalMs, s.meanMs, s.p50Ms, s.p99Ms, s.maxMs, e.intervalMs,
              s.jitterMs, s.dropped, s.received + s.dropped, s.dropPercent,
              s.hostDelayMs.map { String(format: "%.2f ms", $0) } ?? "n/a", s.addedAverageMs, s.addedWorstMs)
+    }
+
+    // MARK: - Diagnostics report
+
+    /// The report on screen (Diagnostics tab or Help menu), nil when closed.
+    var diagnosticsReport: String?
+
+    func showDiagnosticsReport() { diagnosticsReport = makeDiagnosticsReport() }
+
+    func copyDiagnosticsReport(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        message = "Latency results copied to the clipboard."
+        message = "Diagnostics report copied."
+    }
+
+    func saveDiagnosticsReport(_ text: String) {
+        let panel = NSSavePanel()
+        let day = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withFullDate])
+        panel.nameFieldStringValue = "NS2 Bridge diagnostics \(day).md"
+        panel.allowedContentTypes = [.plainText]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try text.write(to: url, atomically: true, encoding: .utf8); message = "Diagnostics report saved." }
+        catch { message = "Couldn't save: \(error.localizedDescription)" }
+    }
+
+    /// Project links (help, issues, releases).
+    enum Links {
+        static let site = URL(string: "https://info-moed.github.io/NS2Bridge/")!
+        static let newIssue = URL(string: "https://github.com/info-moed/NS2Bridge/issues/new/choose")!
+        static let releases = URL(string: "https://github.com/info-moed/NS2Bridge/releases")!
+        static let repository = URL(string: "https://github.com/info-moed/NS2Bridge")!
+        static func guide(_ page: String) -> URL { site.appendingPathComponent("guide/\(page).html") }
+    }
+
+    func openURL(_ url: URL) { NSWorkspace.shared.open(url) }
+
+    /// From the menu bar: open the window and show the diagnostics report there.
+    func exportDiagnosticsFromMenu() {
+        openMainWindow?()
+        NSApp.activate(ignoringOtherApps: true)
+        showDiagnosticsReport()
+    }
+
+    /// The standard About panel, with the project's links, license and the non-affiliation notice.
+    func showAbout() {
+        let credits = NSMutableAttributedString(string: "Switch 2 Pro, NSO GameCube and NSO N64 controllers on macOS.\n\n",
+                                                attributes: [.font: NSFont.systemFont(ofSize: 11)])
+        for (title, url) in [("Website and documentation", Links.site), ("Source code (MIT License)", Links.repository),
+                             ("Third-party notices", Links.repository.appendingPathComponent("blob/main/THIRD_PARTY_NOTICES.md"))] {
+            credits.append(NSAttributedString(string: title + "\n", attributes: [.link: url, .font: NSFont.systemFont(ofSize: 11)]))
+        }
+        credits.append(NSAttributedString(string: "\nUnofficial: not affiliated with or endorsed by Nintendo, Microsoft or Apple.",
+                                          attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.secondaryLabelColor]))
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
+
+    /// Everything useful for a bug report, scrubbed of personal data (`Diagnostics.scrub`): versions, Mac,
+    /// settings, controllers, Bluetooth, latency, games, and this app's recent log. Shown before it's saved.
+    func makeDiagnosticsReport() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let helper = Bundle.main.url(forResource: "ns2rumble", withExtension: "dylib").map(GameInstaller.helperVersion) ?? 0
+        let on = { (b: Bool) in b ? "on" : "off" }
+        var lines = ["# NS2 Bridge diagnostics report", ""]
+        let utc = ISO8601DateFormatter()
+        lines += ["Generated \(utc.string(from: Date())) (UTC)", "", "## System", ""]
+        lines.append("- NS2 Bridge \(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?")) · helper v\(helper)")
+        lines.append("- \(ProcessInfo.processInfo.operatingSystemVersionString) · \(Diagnostics.macModel)")
+        lines += ["", "## Settings", ""]
+        lines.append("- Motion \(motionMode.rawValue) · DSU \(on(dsuEnabled))\(dsuError.map { " (error: \($0))" } ?? "") · \(dsuClients) DSU client(s)")
+        lines.append("- SDL settings \(on(sdlEnabled)) · force feedback \(on(forceFeedbackEnabled)) · Xbox mode \(on(xboxMode)) · layout \(buttonLayout.rawValue)")
+        lines.append("- Bluetooth speed \(bluetoothSpeed.rawValue) (in effect: \(bleSpeedInEffect.rawValue)) · advanced \(on(advancedMode)) · demo \(on(demoMode))")
+        lines += ["", "## Controllers", ""]
+        if hub.controllers.isEmpty { lines.append("- none connected") }
+        for c in hub.controllers {
+            let i = c.lastInput
+            lines.append("- P\(c.player) \(c.kind.displayName) · \(c.transport.rawValue)\(c.isDemo ? " (demo)" : "") · \(c.reportsPerSecond) reports/s · battery \(i.map { "\(Int($0.battery * 100))%" } ?? "?")\(i?.charging == true ? " charging" : "") · profile “\(profile(for: c).name)”\(c.ready ? "" : " · not ready")")
+        }
+        lines += ["", "## Bluetooth", ""]
+        lines.append("- \(String(describing: bleState)) · \(String(format: "%.0f", bleRate)) reports/s · interval \(String(format: "%.1f", bleIntervalMs)) ms ± \(String(format: "%.1f", bleJitterMs))")
+        if let c = selectedController {
+            lines += ["", "## Latency (\(c.label), last 1000 reports)", "", "```", latencyText(c.latency.snapshot()), "```"]
+        }
+        lines += ["", "## Games", ""]
+        if games.isEmpty { lines.append("- none added") }
+        for g in games {
+            let a = analyses[g.path]
+            let installed = GameInstaller.isInstalled(g)
+            let drivers = (driverReports[g.path] ?? []).map { r in
+                "\(ControllerKind(productID: r.productID)?.shortName ?? String(format: "%04X", r.productID)): \(r.isVirtual ? "virtual" : r.usesSDLDriver ? "SDL HIDAPI" : "generic")"
+            }
+            lines.append("- \(g.deletingPathExtension().lastPathComponent) · \(a.map { "\($0.verdict.rawValue), \($0.engine.rawValue)" } ?? "not analyzed") · helper \(installed ? "installed" : "at launch")\(drivers.isEmpty ? "" : " · last run: " + drivers.joined(separator: ", "))")
+        }
+        lines += ["", "## Log (last 15 minutes, NS2 Bridge only)", "", "```"] + Diagnostics.recentLog() + ["```", ""]
+        return Diagnostics.scrub(lines.joined(separator: "\n"))
     }
 
     // MARK: - Motion

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Build (release)
+        run: swift build -c release
+      - name: Unit tests
+        run: swift test
+      - name: Game helper and force-feedback plug-in (warnings are errors, universal)
+        run: |
+          clang -dynamiclib -arch arm64 -arch x86_64 -O2 -Wall -Wextra -Werror -framework CoreFoundation \
+            -install_name @loader_path/ns2rumble.dylib -o /tmp/ns2rumble.dylib Hooks/ns2rumble.c
+          clang -bundle -arch arm64 -arch x86_64 -O2 -Wall -Werror -framework CoreFoundation -framework IOKit \
+            -framework ForceFeedback -o /tmp/NS2FF Hooks/NS2FF/NS2FF.c
+      - name: SDL check tools compile (SDL2 and SDL3)
+        run: |
+          for m in 2 3; do
+            cc -fsyntax-only -Wall -Werror -DSDL_MAJOR=$m tools/sdlcheck.c
+            cc -fsyntax-only -Wall -Werror -DSDL_MAJOR=$m tools/vpadcheck.c
+          done
+      - name: Game helper end-to-end (fake SDL3 and SDL2)
+        run: ./scripts/helper-test.sh
+      - name: App bundle
+        run: ./scripts/build-app.sh
+      - name: Shell scripts (shellcheck)
+        run: |
+          brew install --quiet shellcheck
+          shellcheck scripts/*.sh
+      - name: Privacy scan (tracked files)
+        run: ./scripts/privacy-scan.sh
+
+  docs:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check relative links in Markdown
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress './**/*.md'
+          fail: true

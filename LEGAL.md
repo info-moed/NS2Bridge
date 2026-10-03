@@ -131,7 +131,12 @@ of scope; don't use the helper or plug-in with them.
 
 ## 6. Privacy
 
-- NS2 Bridge has **no telemetry, analytics, accounts, or internet access**.
+- NS2 Bridge has **no telemetry, analytics or accounts**, and sends **nothing about you or your controllers**
+  anywhere. Its only internet access is the **update check**: one request to GitHub's public Releases API asking
+  for the latest version, only when you click *Check for Updates* or after you turn on *Check for updates
+  automatically* (once a day; off by default). Links in the app (help, issues) open in your browser.
+- The **diagnostics report** (Diagnostics tab) is created on your Mac, shown to you, and only saved or copied when you
+  choose; it removes your home folder path, serial numbers, full Bluetooth addresses and email addresses.
 - The only network sockets are local (loopback only): `127.0.0.1:26761` carries rumble requests and
   controller-driver reports from games to the app, and Bluetooth controllers' input from the app back to the
   helper in each game (on a loopback port the helper picks); `127.0.0.1:26760` is the DSU server that

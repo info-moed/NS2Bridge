@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # Clean, from-scratch release: wipes build outputs, runs the tests, builds the app,
 # and produces dist/NS2Bridge-<version>-macOS.zip plus a SHA-256 checksum.
 set -euo pipefail

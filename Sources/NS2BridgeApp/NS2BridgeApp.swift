@@ -17,6 +17,16 @@ struct NS2BridgeApp: App {
             DrawingRenderer.renderAll(to: URL(fileURLWithPath: args[i + 1]))
             exit(0)
         }
+        // `--render-intro <folder>`: the startup animation as frames and an animated GIF.
+        if let i = args.firstIndex(of: "--render-intro"), i + 1 < args.count {
+            MainActor.assumeIsolated { IntroExporter.render(to: URL(fileURLWithPath: args[i + 1])) }
+            exit(0)
+        }
+        // `--screenshot-tour <folder>`: documentation screenshots of every tab (see ScreenshotTour).
+        if let i = args.firstIndex(of: "--screenshot-tour"), i + 1 < args.count {
+            ScreenshotTour.folder = URL(fileURLWithPath: args[i + 1])
+            ScreenshotTour.prepareDefaults()
+        }
         _model = State(initialValue: BridgeModel())
     }
 
@@ -74,6 +84,11 @@ struct MenuContent: View {
                 for c in model.controllers where c.kind.needsInit { model.select(c.id); model.reconnectSelected() }
             }
             .disabled(!model.controllers.contains { $0.kind.needsInit })
+            if let u = model.availableUpdate {
+                Button("Update available: NS2 Bridge \(u.version)…") { model.downloadUpdate() }
+            }
+            Divider()
+            Menu("Help") { HelpMenuItems() }.menuStyle(.borderlessButton)
             Divider()
             Button("Quit NS2 Bridge") { NSApp.terminate(nil) }
         }
@@ -97,6 +112,7 @@ struct PlayerBadge: View {
     let player: Int
     var body: some View {
         Text("P\(player)").font(.system(size: 11, weight: .heavy, design: .rounded))
+            .accessibilityLabel("Player \(player)")
             .foregroundStyle(PlayerColor.ink(player))
             .frame(width: 28, height: 20)
             .background(RoundedRectangle(cornerRadius: 5).fill(PlayerColor.of(player)))
@@ -246,6 +262,9 @@ enum Pane: String, CaseIterable, Identifiable {
     var usesSelection: Bool { [.controller, .calibrate, .buttons, .haptics, .motion, .latency, .battery, .diagnostics].contains(self) }
 }
 
+/// The intro plays once per launch, even if the window is closed and reopened.
+@MainActor private var introShownThisLaunch = false
+
 struct MainView: View {
     @Environment(BridgeModel.self) private var model
     @State private var pane: Pane? = .controller
@@ -259,6 +278,7 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(210)
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
+                UpdateBanner()
                 ControllerPicker()
                     .padding(.horizontal, 20).padding(.vertical, 10)
                 if model.menuBarTagsHidden {
@@ -307,9 +327,35 @@ struct MainView: View {
         .onChange(of: model.advancedMode) { _, advanced in
             if !advanced, let p = pane, !p.isBasic { pane = .controller }
         }
-        .sheet(isPresented: Binding(get: { model.showWelcome }, set: { model.showWelcome = $0 })) {
+        .overlay {
+            if model.introPlaying { IntroAnimation { withAnimation(.easeOut(duration: 0.2)) { model.introPlaying = false } } }
+        }
+        .onAppear {
+            // Once per launch, when the window first appears.
+            if !introShownThisLaunch, model.introEnabled, ScreenshotTour.folder == nil,
+               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                model.introPlaying = true
+            }
+            introShownThisLaunch = true
+        }
+        .sheet(isPresented: Binding(get: { model.showWelcome && !model.introPlaying }, set: { model.showWelcome = $0 })) {
             WelcomeView().environment(model)
         }
+        .sheet(isPresented: Binding(get: { model.whatsNew != nil && !model.showWelcome && !model.introPlaying }, set: { if !$0 { model.whatsNew = nil } })) {
+            WhatsNewSheet(notes: model.whatsNew ?? "").environment(model)
+        }
+        .sheet(isPresented: Binding(get: { model.diagnosticsReport != nil }, set: { if !$0 { model.diagnosticsReport = nil } })) {
+            DiagnosticsReportSheet(report: model.diagnosticsReport ?? "").environment(model)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { model.openURL(BridgeModel.Links.guide((pane ?? .controller).guidePage)) } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .help("Help for this tab (opens the user guide)")
+            }
+        }
+        .task { await ScreenshotTour.run(model: model) }
         .onChange(of: model.requestedPane) { _, p in
             if let p { pane = p; model.requestedPane = nil }
         }
@@ -346,7 +392,7 @@ enum DrawingRenderer {
         }
         for i in 0..<WelcomeContent.pageCount {
             save(WelcomeContent(page: .constant(i), advanced: .constant(false), openAtLogin: .constant(true),
-                                sdlEnabled: .constant(true), connected: [], finish: {}), 620, 520, dir, "welcome-\(i + 1)")
+                                sdlEnabled: .constant(true), checkUpdates: .constant(false), connected: [], finish: {}), 620, 520, dir, "welcome-\(i + 1)")
         }
     }
 
@@ -360,6 +406,95 @@ enum DrawingRenderer {
             guard let img = r.nsImage, let tiff = img.tiffRepresentation,
                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
             try? png.write(to: dir.appendingPathComponent("\(name)-\(suffix).png"))
+        }
+    }
+}
+
+/// Help items, shared by the menu bar menus.
+struct HelpMenuItems: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        Button("About NS2 Bridge") { model.showAbout() }
+        Button("NS2 Bridge Help") { model.openURL(BridgeModel.Links.site) }
+        Button("Troubleshooting") { model.openURL(BridgeModel.Links.site.appendingPathComponent("reference/troubleshooting.html")) }
+        Button(model.checkingForUpdates ? "Checking for Updates…" : "Check for Updates…") { model.checkForUpdates(userInitiated: true) }
+            .disabled(model.checkingForUpdates)
+        Divider()
+        Button("Export Diagnostics Report…") { model.exportDiagnosticsFromMenu() }
+        Button("Report an Issue…") { model.openURL(BridgeModel.Links.newIssue) }
+    }
+}
+
+/// A banner across the window when a newer release exists.
+struct UpdateBanner: View {
+    @Environment(BridgeModel.self) private var model
+
+    var body: some View {
+        if let u = model.availableUpdate {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+                Text("NS2 Bridge \(u.version) is available").font(.callout.bold())
+                Text("You have \(BridgeModel.appVersion).").font(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Button("Release Notes and Download") { model.downloadUpdate() }
+                Button { model.availableUpdate = nil } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).help("Hide until the next check")
+            }
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(.blue.opacity(0.1))
+        }
+    }
+}
+
+/// After an update: this version's changelog section.
+struct WhatsNewSheet: View {
+    @Environment(BridgeModel.self) private var model
+    let notes: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What's new in NS2 Bridge \(BridgeModel.appVersion)").font(.title2.bold())
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(notes.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, line in
+                        let text = line.trimmingCharacters(in: .whitespaces)
+                        if text.hasPrefix("### ") {
+                            Text(text.dropFirst(4)).font(.headline).padding(.top, 6)
+                        } else if !text.isEmpty {
+                            Text((try? AttributedString(markdown: String(line), options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(String(line)))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .padding(4)
+            }
+            HStack {
+                Button("Full Changelog") { model.openURL(BridgeModel.Links.repository.appendingPathComponent("blob/main/CHANGELOG.md")) }
+                Spacer()
+                Button("Continue") { model.whatsNew = nil }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 480)
+    }
+}
+
+extension Pane {
+    /// The user-guide page for this tab (docs/guide/<page>.md).
+    var guidePage: String {
+        switch self {
+        case .players, .controller: "controllers"
+        case .calibrate: "calibration"
+        case .buttons: "button-test"
+        case .haptics: "haptics"
+        case .motion: "motion"
+        case .latency: "latency"
+        case .battery: "battery"
+        case .games: "games"
+        case .wireless: "bluetooth"
+        case .diagnostics: "diagnostics"
+        case .setup: "setup"
         }
     }
 }

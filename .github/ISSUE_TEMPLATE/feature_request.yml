@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement or a new feature.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or use case, rather than a specific solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could NS2 Bridge help?
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else (controller, game, emulator, links)

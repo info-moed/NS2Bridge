@@ -75,9 +75,10 @@ public final class LatencyMonitor: @unchecked Sendable {
         }
     }
 
-    /// Record one report. `hidTimestamp` is IOKit's mach-absolute timestamp (USB), or nil.
-    public func record(_ report: [UInt8], link: Link, hidTimestamp: UInt64? = nil) {
-        let now = mach_absolute_time()
+    /// Record one report. `hidTimestamp` is IOKit's mach-absolute timestamp (USB), or nil. `arrival` overrides
+    /// the arrival time (mach-absolute; Demo mode passes each recorded report's own time).
+    public func record(_ report: [UInt8], link: Link, hidTimestamp: UInt64? = nil, arrival: UInt64? = nil) {
+        let now = arrival ?? mach_absolute_time()
         lock.withLock {
             if link != self.link { self.link = link; lastArrival = 0; lastCounter = nil; gaps.removeAll(); hostDelays.removeAll(); dropped = 0; received = 0 }
             if lastArrival != 0 {
@@ -120,6 +121,11 @@ public final class LatencyMonitor: @unchecked Sendable {
             if !hostDelays.isEmpty { s.hostDelayMs = hostDelays.reduce(0, +) / Double(hostDelays.count) }
             return s
         }
+    }
+
+    /// Milliseconds → mach-absolute ticks.
+    public static func ticks(ms: Double) -> UInt64 {
+        UInt64(ms * 1_000_000 * Double(timebase.denom) / Double(timebase.numer))
     }
 
     static func ms(_ ticks: UInt64) -> Double {

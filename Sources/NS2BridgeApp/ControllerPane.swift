@@ -5,6 +5,25 @@ import SwiftUI
 struct ControllerPane: View {
     @Environment(BridgeModel.self) private var model
 
+    /// What VoiceOver reads for the drawing: pressed buttons, stick positions and triggers, in words.
+    private var liveDescription: String {
+        guard let i = model.input, model.isConnected else { return "Not connected" }
+        let spoken = ["↑": "up", "↓": "down", "←": "left", "→": "right", "−": "minus", "+": "plus",
+                      "C↑": "C up", "C↓": "C down", "C←": "C left", "C→": "C right"]
+        let pressed = i.pressed.sorted().map { spoken[$0] ?? $0 }
+        var parts = [pressed.isEmpty ? "No buttons pressed" : "Pressed: " + pressed.joined(separator: ", ")]
+        for (n, stick) in i.sticks.enumerated() {
+            let v = model.calibrated(n, stick)
+            let amount = Int((hypot(v.x, v.y) * 100).rounded())
+            if amount >= 5 {
+                let dir = [(v.y > 0.4, "up"), (v.y < -0.4, "down"), (v.x < -0.4, "left"), (v.x > 0.4, "right")].filter(\.0).map(\.1)
+                parts.append("\(model.selectedKind.stickNames[n]) \(amount)% \(dir.joined(separator: " "))")
+            }
+        }
+        for (n, t) in i.triggers.enumerated() where t > 0.05 { parts.append("\(n == 0 ? "L" : "R") trigger \(Int(t * 100))%") }
+        return parts.joined(separator: ". ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Live view").font(.title2.bold())
@@ -33,6 +52,9 @@ struct ControllerPane: View {
             }
             .opacity(model.isConnected ? 1 : 0.35)
             .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(model.selectedKind.displayName) live view")
+            .accessibilityValue(liveDescription)
 
             if let i = model.input, model.isConnected {
                 HStack(spacing: 24) {

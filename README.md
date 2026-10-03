@@ -1,14 +1,35 @@
 <p align="center"><img src="docs/icon.png" width="128" alt="NS2 Bridge icon"></p>
 
-# NS2 Bridge
+<h1 align="center">NS2 Bridge</h1>
 
-**Nintendo Switch 2 Pro, NSO GameCube and NSO N64 controllers on your Mac**: plug-and-play input for
-SDL games and emulators, rumble in games, gyro for emulators, calibration, diagnostics and a
-latency test. Native Swift app, no drivers to install, **no Apple Developer account needed**.
+<p align="center">
+<b>Switch 2 Pro, NSO GameCube and NSO N64 controllers on your Mac</b>, over USB or Bluetooth,<br>
+with rumble, gyro and analog triggers, in games and emulators.
+</p>
+
+<p align="center">
+<a href="https://github.com/info-moed/NS2Bridge/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/info-moed/NS2Bridge?label=download"></a>
+<img alt="macOS 15 or later" src="https://img.shields.io/badge/macOS-15%2B-blue">
+<a href="https://github.com/info-moed/NS2Bridge/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/info-moed/NS2Bridge/actions/workflows/ci.yml/badge.svg"></a>
+<a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/info-moed/NS2Bridge"></a>
+</p>
+
+<p align="center">
+<a href="https://info-moed.github.io/NS2Bridge/"><b>Website and documentation</b></a> ·
+<a href="https://github.com/info-moed/NS2Bridge/releases/latest"><b>Download</b></a> ·
+<a href="docs/guide/getting-started.md">Getting started</a> ·
+<a href="docs/reference/troubleshooting.md">Troubleshooting</a>
+</p>
+
+<p align="center"><img src="docs/images/intro.gif" width="640" alt="NS2 Bridge's startup animation: a pixel-art controller assembling from 3D voxels"></p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/tab-controller-dark.png">
+  <img src="docs/images/tab-controller-light.png" alt="NS2 Bridge showing a Switch 2 Pro Controller's live input">
+</picture>
 
 > **Unofficial.** Not affiliated with or endorsed by Nintendo, Microsoft or Apple. See [LEGAL.md](LEGAL.md).
-
----
+> Native Swift app, no drivers to install, no account, no telemetry. Free and open source (MIT).
 
 ## Why
 
@@ -53,126 +74,49 @@ And for every controller:
 - **Multiple controllers:** players P1–P8 with player lights, per-type profiles. ✅ Tested with two at once.
 - 🧪 Rumble with no changes to games (macOS force-feedback plug-in): works in a test harness, not yet
   confirmed in a real game.
+- **Demo mode:** explore every tab with two recorded controllers, no hardware needed. ✅
 - ❌ Native Mac games that use Apple's GameController framework: that needs a DriverKit driver, which
   needs a paid Apple Developer account.
 
-## Install
+## Quick start
 
-**Short version:** download `NS2Bridge-1.0.1-macOS.zip` from [Releases](https://github.com/info-moed/NS2Bridge/releases), drag **NS2 Bridge.app** to
-Applications, and allow it once in **System Settings → Privacy & Security → Open Anyway**. Plug in a
-controller with a USB-C **data** cable.
+1. **Download** `NS2Bridge-<version>-macOS.zip` from the [latest release](https://github.com/info-moed/NS2Bridge/releases/latest),
+   drag **NS2 Bridge.app** to Applications, and allow it once in **System Settings → Privacy & Security → Open
+   Anyway** (it isn't signed with a paid Apple Developer ID). Or with Homebrew: `brew install --cask info-moed/tap/ns2bridge`.
+2. **Connect** a controller with a USB-C **data** cable, or over Bluetooth from the **Wireless** tab.
+3. **Play:** emulators read it over DSU (gyro, analog triggers); SDL games get rumble and Bluetooth controllers when
+   launched from the **Games** tab. The welcome tour walks you through it.
 
-Full instructions, permissions and uninstall steps: **[docs/INSTALL.md](docs/INSTALL.md)**.
+No controller at hand? **Setup → Demo mode** plays back two recorded controllers.
 
-### Build from source
+## Documentation
+
+| For | Read |
+|---|---|
+| Everyone | [Getting started](docs/guide/getting-started.md) · [User guide](docs/guide/index.md) (every tab) · [Install and uninstall](docs/INSTALL.md) |
+| Playing | [Games](docs/guide/games.md) · [Emulators (DSU)](docs/guide/emulators.md) · [Bluetooth](docs/guide/bluetooth.md) |
+| Help | [Troubleshooting](docs/reference/troubleshooting.md) · [FAQ](docs/reference/faq.md) · [Compatibility](docs/reference/compatibility.md) · [Support](SUPPORT.md) |
+| Details | [Privacy](docs/reference/privacy.md) · [Settings and files](docs/reference/settings-and-files.md) · [Glossary](docs/reference/glossary.md) |
+| Developers | [For developers](docs/DEVELOPMENT.md) · [Architecture](docs/ARCHITECTURE.md) · [Controller protocol](docs/PROTOCOL.md) · [Helper protocol](docs/reference/helper-protocol.md) · [Research evidence](research/) · [Contributing](CONTRIBUTING.md) |
+
+The same docs, with search, at **[info-moed.github.io/NS2Bridge](https://info-moed.github.io/NS2Bridge/)**.
+
+## Build from source
 
 ```bash
 git clone https://github.com/info-moed/NS2Bridge.git && cd NS2Bridge
-./scripts/build-app.sh          # → build/NS2 Bridge.app
-./scripts/package.sh            # clean build + tests → dist/NS2Bridge-<version>-macOS.zip + .sha256
+swift test                      # unit tests, no controller needed
+./scripts/build-app.sh          # → build/NS2 Bridge.app (universal, ad-hoc signed)
 ```
 
-Requires macOS 15+ and Xcode 16+ (or just its command-line tools). The result is a universal build
-(Apple Silicon + Intel), ad-hoc signed.
+Requires macOS 15+ and Xcode 16+ (or its command-line tools). No Apple Developer account.
 
-## Using it
+## Contributing
 
-NS2 Bridge lives in the menu bar and has one window. On first launch a **five-page welcome guide**
-walks you through connecting, playing and adjusting, then lets you pick **Basic** (the everyday tabs) or
-**Advanced** (everything). Switch any time at the bottom of the sidebar or in Setup, where the guide can
-also be reopened.
-
-The chips across the top of the window are the connected controllers (P1, P2, …); the tools act on the
-one you pick. Double-click a chip (or its menu bar pill) to turn that controller off; right-click for more.
-
-Basic mode shows Players & Profiles, Controller, Calibrate Sticks, Haptics, Games, Wireless, Battery and
-Setup. Advanced adds Button Test, Motion, Latency Test and Diagnostics.
-
-| Tab | What it does |
-|---|---|
-| **Players & Profiles** | Player numbers (swap them here), each controller's own profile, turn off. |
-| **Controller** | Live picture of the controller: buttons light up, sticks move, triggers fill. |
-| **Calibrate Sticks** | Let go (center), then roll the sticks around the edge (range). GameCube: trigger test too. |
-| **Button Test** | Every button turns green once it's been pressed. |
-| **Haptics** | Test effects, left/right motors, low/high bands, strength. |
-| **Motion** | Gyro (Automatic / Always on / Off), live 3D view, gyro calibration, DSU server for emulators. |
-| **Latency Test** | 10-second test: measured vs expected, histogram, verdict. USB and Bluetooth. |
-| **Battery** | Level, voltage, history chart, cycle estimate, charge alert, curve calibration, life test. |
-| **Games** | Add games, see what works, launch with rumble, install/update/remove the helper. |
-| **Wireless** | Bluetooth: N64 via macOS settings; Switch 2 Pro and GameCube via **Connect** + SYNC. |
-| **Diagnostics** | Report rate, live report bytes, reconnect, record to file. |
-| **Setup** | SDL switch, force-feedback rumble, Xbox mode, button layout, open at login. |
-
-### Games
-
-Games that use SDL (most emulators and PC ports) see the controllers as gamepads once **Setup →
-Let SDL games and emulators use this controller** is on. For **rumble**, full **stick range** and the
-**N64 driver guard**, the game needs NS2 Bridge's helper:
-
-1. **Games → Add game…** and pick the app. NS2 Bridge checks it and shows one of:
-   - **Ready:** click **Play with rumble** (the helper attaches at launch).
-   - **Install the rumble helper into this game:** macOS blocks launch-time helpers for this build.
-     One click installs it inside the game, with the originals backed up; then it works however you
-     launch the game. **Update helper in game** appears when NS2 Bridge has a newer helper.
-   - **Not supported:** SDL is built into the game, or it has no rumble. You can still play.
-2. A live checklist confirms: game launched → helper attached → rumble received. Each game's row
-   also shows which SDL driver the last run gave each controller.
-
-Some games have their own stick sensitivity and deadzone settings (e.g. BattleShip: 20% deadzone).
-Those still apply on top.
-
-### Emulators with gyro (DSU / CemuHook)
-
-The DSU server runs on `127.0.0.1:26760` (Motion tab). Player 1 is slot 1 (index 0), and so on.
-
-- **Dolphin:** Controllers → Alternate Input Sources → DSU Client → add `127.0.0.1`, port `26760`.
-- **Cemu:** Input settings → API "DSUController".
-- **Ryujinx:** Input → Motion → "CemuHook compatible", `127.0.0.1:26760`.
-
-Gyro on the Switch 2 Pro is **Automatic** by default (Motion tab): it turns on while an emulator is using
-the Pro over DSU and off again when it stops, because while motion flows, games reading the Pro through
-SDL directly can't see it. The Motion tab shows a live 3D model of the controller to check the readings.
-
-### Wireless
-
-- **N64:** pair once in macOS Bluetooth settings (hold SYNC); then press any button to reconnect.
-- **Switch 2 Pro, GameCube:** Wireless → **Connect**, unplug the cable, hold the small **SYNC** button.
-- **Speed** (Wireless tab): **Fastest** = one report every **7.5 ms** (133/s; USB: 4 ms), the default.
-  macOS on its own would use 30 ms, because the controller never asks for faster; NS2 Bridge asks macOS for
-  a shorter interval (a private macOS call, so a future macOS may ignore it; it then runs at 30 ms). Fast
-  (15 ms) and Standard (30 ms) use less of the controller's battery. The Latency Test tab shows what you get.
-- **Games over Bluetooth** work like Steam Input: in games launched from the Games tab or with the helper
-  installed, NS2 Bridge's helper presents the Bluetooth controller as a normal SDL gamepad, with rumble, and
-  gyro in SDL3 games (SDL 2.24 or later needed). Games started any other way don't see Bluetooth controllers.
-
-## Troubleshooting
-
-| Problem | Fix |
-|---|---|
-| Controller charges but never connects | Use a **data** USB-C cable; try another port. |
-| No input in a game | Turn on **Setup → Let SDL games…**, then quit and reopen the game. |
-| N64 input goes haywire in a game | Launch it from **Games** (or install the helper). The game switches SDL's N64 driver off; the helper keeps it on. The Games row shows a warning if it happens. |
-| Sticks don't reach the edge in a game | Launch from **Games** or update the helper; calibrate the sticks. Check the game's own sensitivity/deadzone. |
-| No rumble in a game | Start it from **Games → Play with rumble** and check the game's own rumble setting. |
-| "…exclusive access" when connecting | Another app (often a browser tab using WebUSB) holds the controller. Close it, click **Reconnect**. |
-| macOS asks for permissions again after an update | Expected with ad-hoc signing. Approve again. |
-
-Developers: `./scripts/sdl-check.sh /path/to/Game.app` runs a game's own SDL, acts like the worst-case
-game, and reports whether Nintendo controllers get SDL's own drivers with no phantom input.
-
-## How it works
-
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**: the design.
-- **[docs/PROTOCOL.md](docs/PROTOCOL.md)**: the controller protocols. Every fact is marked as verified
-  on hardware, documented elsewhere, or unknown.
-- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**: maintainer notes, hard-won facts, test tools, releasing.
-
-## Roadmap
-
-1. Hardware confirmation of the remaining 🧪 items above (N64 over Bluetooth, the GameCube at 7.5 ms).
-2. Gyro-to-mouse; decoding the motion data packed inside the Pro's normal report.
-3. Bluetooth controllers in games that don't use SDL (a HID-level layer, like Steam Input's).
-4. Joy-Con 2.
+Compatibility reports, bug reports with a diagnostics report, protocol findings with evidence, documentation fixes
+and code are all welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Questions go to
+[Discussions](https://github.com/info-moed/NS2Bridge/discussions). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md);
+security issues go to [SECURITY.md](SECURITY.md).
 
 ## Credits
 

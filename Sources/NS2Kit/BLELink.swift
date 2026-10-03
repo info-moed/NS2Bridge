@@ -16,6 +16,10 @@ public enum BluetoothSpeed: String, CaseIterable, Identifiable, Sendable {
     /// bluetoothd level: -12 "midi v2" (7.5 ms, events long enough for a 63-byte report; -25 "super-low" isn't),
     /// -7 "very-low" (15 ms), 0 "low" (10–30 ms, the chip picks 30: macOS's default).
     var latencyLevel: Int64 { self == .fastest ? -12 : self == .fast ? -7 : 0 }
+
+    /// Fastest drops to Fast if reports collapse: ≈ 400 arrive in 3 s at 7.5 ms, a handful when the link fails
+    /// (seen with bluetoothd's other 7.5 ms level), ≈ 200 even at 15 ms.
+    static func fallsBack(reportsIn3Seconds n: Int) -> Bool { n < 150 }
 }
 
 /// Bluetooth LE link to a Switch 2-family controller (Pro Controller 2, NSO GameCube) — CoreBluetooth
@@ -74,11 +78,8 @@ public final class BLELink: NSObject, @unchecked Sendable {
     private var lastNotify: UInt64 = 0
     private var imuStamp: UInt32 = 0            // IMU timestamp of the latest 0x05 notification (0 = no motion)
     private var imuRetried = false
-    /// Commands sent one at a time, each after the previous one's reply (or a timeout): sent 30 ms apart,
-    /// replies went missing and a command could land before the previous one had taken effect.
-    private enum Step { case command([UInt8]), run(() -> Void) }
-    private var steps: [Step] = []
-    private var awaiting: (command: UInt8, sub: UInt8)?
+    /// Commands one at a time, each after the previous one's reply (see `BLECommandQueue`).
+    private var commands = BLECommandQueue()
     private var stepTimeout: DispatchWorkItem?
 
     public override init() {
@@ -153,7 +154,7 @@ public final class BLELink: NSObject, @unchecked Sendable {
         guard s == .fastest else { return }
         queue.asyncAfter(deadline: .now() + 3) { [self] in
             // Expect ≈ 400 reports in 3 s; the collapse seen at 7.5 ms left a handful.
-            guard effectiveSpeed == .fastest, peripheral === p, reportsSinceSpeed < 150 else { return }
+            guard effectiveSpeed == .fastest, peripheral === p, BluetoothSpeed.fallsBack(reportsIn3Seconds: reportsSinceSpeed) else { return }
             bleLog.notice("only \(self.reportsSinceSpeed, privacy: .public) reports in 3 s at 7.5 ms: dropping to 15 ms")
             setConnectionLatency(BluetoothSpeed.fast.latencyLevel, for: p)
             effectiveSpeed = .fast
@@ -234,31 +235,24 @@ public final class BLELink: NSObject, @unchecked Sendable {
     }
 
     /// Queue commands (and actions) to run in order, each command waiting for its reply (max 300 ms).
-    private func enqueue(_ new: [Step]) {
-        let idle = steps.isEmpty && awaiting == nil
-        steps += new
-        if idle { nextStep() }
-    }
+    private func enqueue(_ new: [BLECommandQueue.Step]) { perform(commands.enqueue(new)) }
 
-    private func nextStep() {
+    private func perform(_ outputs: [BLECommandQueue.Output]) {
         stepTimeout?.cancel()
-        awaiting = nil
-        guard peripheral != nil else { steps.removeAll(); return }
-        while !steps.isEmpty {
-            switch steps.removeFirst() {
+        guard peripheral != nil else { commands.reset(); return }
+        for o in outputs {
+            switch o {
             case .run(let action):
                 action()
-            case .command(let c):
+            case .send(let c):
                 command(c)
-                awaiting = (c[0], c[3])
                 let timeout = DispatchWorkItem { [weak self] in
-                    guard let self, let a = self.awaiting else { return }
+                    guard let self, let a = self.commands.awaiting else { return }
                     bleLog.notice("no reply to \(String(format: "%02X %02X", a.command, a.sub), privacy: .public)")
-                    self.nextStep()
+                    self.perform(self.commands.timedOut())
                 }
                 stepTimeout = timeout
                 queue.asyncAfter(deadline: .now() + .milliseconds(300), execute: timeout)
-                return
             }
         }
     }
@@ -396,9 +390,8 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
         chars.removeAll()
         imuRetried = false
         effectiveSpeed = .standard
-        steps.removeAll()
+        commands.reset()
         stepTimeout?.cancel()
-        awaiting = nil
         measuredRate = 0
         if wantScan { startScan() } else { state = .idle }   // auto-rescan: press sync again to reconnect
     }
@@ -454,7 +447,7 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
             if r.first == 0x0C {                      // feature replies (flash replies carry the serial: not logged)
                 bleLog.notice("reply \(r.prefix(20).map { String(format: "%02X", $0) }.joined(separator: " "), privacy: .public)")
             }
-            if let a = awaiting, r.count >= 4, r[0] == a.command, r[3] == a.sub { nextStep() }
+            if let next = commands.reply(r) { perform(next) }
             onAck?(r)
         }
     }

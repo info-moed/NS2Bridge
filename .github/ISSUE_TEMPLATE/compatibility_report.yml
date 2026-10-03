@@ -1,0 +1,64 @@
+name: Compatibility report
+description: Tell us how a game or emulator worked with a controller (good or bad).
+labels: [compatibility]
+title: "[Compatibility] <game or emulator> with <controller>"
+body:
+  - type: markdown
+    attributes:
+      value: Reports like this build the [compatibility list](https://github.com/info-moed/NS2Bridge/blob/main/docs/reference/compatibility.md). Reports of things that work are just as useful as failures.
+  - type: input
+    id: software
+    attributes:
+      label: Game or emulator (name, version, where it came from)
+      placeholder: "Dolphin 2509 (dolphin-emu.org)"
+    validations:
+      required: true
+  - type: dropdown
+    id: controller
+    attributes:
+      label: Controller
+      options:
+        - Switch 2 Pro Controller
+        - NSO GameCube controller
+        - NSO N64 controller
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - USB
+        - Bluetooth
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How it was connected to the game
+      options:
+        - Game launched from NS2 Bridge's Games tab
+        - Helper installed into the game
+        - Game opened normally (Finder, Steam, …)
+        - Emulator using DSU (CemuHook)
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What worked
+      options:
+        - label: Buttons and sticks
+        - label: Analog triggers (GameCube)
+        - label: Rumble
+        - label: Gyro / motion
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (problems, settings you changed, button layout)
+  - type: input
+    id: versions
+    attributes:
+      label: NS2 Bridge version, macOS version, Mac model
+    validations:
+      required: true

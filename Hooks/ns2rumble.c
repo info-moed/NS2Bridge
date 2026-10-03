@@ -920,7 +920,8 @@ __attribute__((constructor)) static void ns2_init(void) {
     sock = socket(AF_INET, SOCK_DGRAM, 0);
     memset(&dest, 0, sizeof dest);
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(26761);
+    const char *port = getenv("NS2_BRIDGE_PORT");                     // tests only (Tests/HelperTests)
+    dest.sin_port = htons(port ? (uint16_t)atoi(port) : 26761);
     dest.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     struct sockaddr_in local = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
     if (sock >= 0 && bind(sock, (const struct sockaddr *)&local, sizeof local) == 0) {   // port for NS2 Bridge's stream

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 # Builds "build/NS2 Bridge.app" — universal (Apple Silicon + Intel), ad-hoc signed.
 # No Apple Developer account needed.
 set -euo pipefail
@@ -15,6 +15,13 @@ cp "$BIN/NS2Bridge" "$APP/Contents/MacOS/NS2Bridge"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -f Resources/AppIcon.icns ] || swift scripts/make-icon.swift "$PWD"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+# What's New after an update reads this version's section from the changelog.
+cp CHANGELOG.md "$APP/Contents/Resources/CHANGELOG.md"
+
+# Demo mode (and documentation screenshots): two recorded controllers, input reports only (research/captures).
+mkdir -p "$APP/Contents/Resources/Demo"
+cp research/captures/pro2-usb-buttons.ns2cap research/captures/gamecube-usb-buttons.ns2cap "$APP/Contents/Resources/Demo/"
 
 # Game helper (SDL2 + SDL3): injected at launch or installed into a game.
 # Universal so it also loads into Intel games running under Rosetta. No SDL link dependency.

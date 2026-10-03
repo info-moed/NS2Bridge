@@ -137,7 +137,9 @@ public struct ControllerInput: Sendable {
 // MARK: - One connected controller
 
 public final class ConnectedController: @unchecked Sendable, Identifiable {
-    public let id: String                 // "usb:<registry id>" or "ble"
+    public let id: String                 // "usb:<registry id>", "ble" or "demo:<kind>"
+    /// A recorded controller replayed in Demo mode (no hardware behind it).
+    public var isDemo: Bool { id.hasPrefix("demo:") }
     public let kind: ControllerKind
     public let transport: LatencyMonitor.Link
     public let hidID: UInt64?
@@ -315,7 +317,8 @@ public final class ControllerHub {
     private var rumbleRoutes: [RumbleRoute<ConnectedController>] = []
 
     private func refreshRoutes() {
-        let routes = controllers.map { RumbleRoute(productID: $0.kind.productID, player: $0.player, deviceID: $0.hidID, item: $0) }
+        let routes = controllers.filter { !$0.isDemo }      // a game's rumble never goes to a demo controller
+            .map { RumbleRoute(productID: $0.kind.productID, player: $0.player, deviceID: $0.hidID, item: $0) }
         routeLock.withLock { rumbleRoutes = routes }
     }
 
@@ -472,7 +475,7 @@ public final class ControllerHub {
 
     /// Re-send the wake-up sequence to one controller (UI "Reconnect").
     public func reinitialize(_ c: ConnectedController) {
-        if c.kind.needsInit, c.transport == .usb { initialize(c) }
+        if c.kind.needsInit, c.transport == .usb, !c.isDemo { initialize(c) }
     }
 
     private func initialize(_ c: ConnectedController) {
@@ -505,6 +508,7 @@ public final class ControllerHub {
 
     /// Switch a running controller between report formats (0x09 ↔ 0x05 for motion).
     private func selectReportFormat(_ c: ConnectedController) {
+        guard !c.isDemo else { return }                           // the demo follows reportFormat by itself
         let format = reportFormat(for: c)
         switch c.transport {
         case .bluetooth:
@@ -530,6 +534,7 @@ public final class ControllerHub {
         for c in controllers {
             c.reportsPerSecond = c.reportCount
             c.reportCount = 0
+            if c.isDemo { continue }
             let silent = Date().timeIntervalSince(c.lastReport)
             if silent > 1.5, c.ready { c.ready = false }       // shows as "no signal" until reports return
             if c.kind.needsInit, c.transport == .usb, !c.initInFlight, silent > 2 {
@@ -568,6 +573,68 @@ public final class ControllerHub {
 
     private func sortPlayers() { controllers.sort { $0.player < $1.player } }
 
+    // MARK: Demo mode
+
+    private var demoTimer: DispatchSourceTimer?
+    public var demoRunning: Bool { demoTimer != nil }
+
+    /// Show recorded controllers as if connected (Demo mode, documentation screenshots). Each clip loops; the
+    /// Pro switches to report 0x05 with a gentle simulated rotation whenever motion is on, as the real one does.
+    public func startDemo(_ clips: [DemoClip]) {
+        stopDemo()
+        var players: [(ConnectedController, DemoClip)] = []
+        for clip in clips where !clip.reports.isEmpty {
+            let c = ConnectedController(id: "demo:\(clip.kind.rawValue)", kind: clip.kind, transport: .usb, hidID: nil,
+                                        locationID: 0, player: nextFreePlayer())
+            c.haptics = HapticsEngine { _ in }                    // vibration goes nowhere
+            controllers.append(c)
+            players.append((c, clip))
+        }
+        sortPlayers()
+        changed()
+        let start = DispatchTime.now().uptimeNanoseconds
+        let startTicks = mach_absolute_time()
+        var next = Array(repeating: 0, count: players.count)
+        var loops = Array(repeating: UInt32(0), count: players.count)
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(4))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let elapsed = UInt32((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+            for (i, (c, clip)) in players.enumerated() {
+                let length = clip.reports.last!.ms + 4
+                while true {
+                    if next[i] == clip.reports.count { next[i] = 0; loops[i] += 1 }
+                    let r = clip.reports[next[i]]
+                    guard r.ms + loops[i] * length <= elapsed else { break }
+                    next[i] += 1
+                    var bytes = r.bytes
+                    if c.kind.hasMotion, self.reportFormat(for: c) == Report05.id {
+                        let m = DemoMotion.sample(at: Double(elapsed) / 1000)
+                        bytes = Report05.make(from: bytes, accel: m.accel, gyro: m.gyro, micros: elapsed &* 1000) ?? bytes
+                    }
+                    // At the recorded time: the latency tab shows the controller's real USB timing.
+                    let at = startTicks + LatencyMonitor.ticks(ms: Double(r.ms + loops[i] * length))
+                    c.latency.record(bytes, link: .usb, arrival: at)
+                    self.handle(bytes, from: c)
+                }
+            }
+        }
+        demoTimer = timer
+        timer.resume()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in   // a battery reading right away
+            for (c, _) in players { self?.requestBattery(c) }
+        }
+    }
+
+    public func stopDemo() {
+        demoTimer?.cancel()
+        demoTimer = nil
+        let before = controllers.count
+        controllers.removeAll { $0.isDemo }
+        if controllers.count != before { changed() }
+    }
+
     /// Move a controller to a player slot, swapping with whoever had it.
     public func assign(_ c: ConnectedController, toPlayer p: Int) {
         if let other = controllers.first(where: { $0.player == p && $0 !== c }) {
@@ -581,6 +648,7 @@ public final class ControllerHub {
     }
 
     private func setPlayerLights(_ c: ConnectedController) {
+        guard !c.isDemo else { return }
         let mask = Self.ledMask(c.player)
         switch (c.kind, c.transport) {
         case (.n64, _):
@@ -629,6 +697,11 @@ public final class ControllerHub {
 
     /// Ask the controller for its battery voltage (and charge status on Switch 2).
     public func requestBattery(_ c: ConnectedController) {
+        if c.isDemo {                                             // a plausible cell voltage, through the real parser
+            let mv = 3_950 + Int.random(in: -3...3)
+            handleSwitch2BatteryReply([0x0B, 0x01, 0x00, 0x03, 0x10, 0x78, 0, 0, UInt8(mv & 0xFF), UInt8(mv >> 8)], for: c)
+            return
+        }
         switch (c.kind, c.transport) {
         case (.n64, _):
             switch1Subcommand(c, 0x50, [])                        // regulated voltage
